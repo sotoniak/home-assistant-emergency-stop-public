@@ -1,0 +1,12 @@
+reset:
+  name: Reset emergency stop
+  description: Reset the latched Emergency Stop state and clear active events.
+acknowledge:
+  name: Acknowledge emergency stop
+  description: Mark the current Emergency Stop as acknowledged without clearing it.
+generate_report:
+  name: Generate emergency stop report
+  description: Generate a JSON report with configuration, inputs, current values, and active events. Stored in /media/emergency-stop/logs. Sends email if configured.
+export_rules:
+  name: Export emergency stop rules
+  description: Export the current rule configuration to a JSON file in /media/emergency-stop/config.

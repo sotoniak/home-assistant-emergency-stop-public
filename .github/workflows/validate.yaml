@@ -1,0 +1,27 @@
+name: Validate
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+permissions: read-all
+
+jobs:
+  validate-hacs:
+    runs-on: "ubuntu-latest"
+    steps:
+      - uses: "actions/checkout@v4"
+      - name: HACS validation (PR)
+        if: github.event_name == 'pull_request'
+        uses: "hacs/action@main"
+        with:
+          category: "integration"
+      - name: HACS validation (branch)
+        if: github.event_name != 'pull_request'
+        uses: "hacs/action@main"
+        with:
+          category: "integration"
+          repository: "sotoniak/home-assistant-emergency-stop"

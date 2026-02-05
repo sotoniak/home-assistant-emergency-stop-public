@@ -1,0 +1,431 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Emergency Stop",
+        "description": "Nastavte globální reportování a e-mail.",
+        "data": {
+          "report_mode": "Detail reportu",
+          "report_domains": "Reportované domény (rozšířené)",
+          "report_entity_ids": "Reportované entity (jen rozšířené)",
+          "brevo_api_key": "Brevo API klíč",
+          "brevo_sender_email": "Brevo odesílatel",
+          "brevo_recipient_email": "Brevo příjemce",
+          "email_levels": "Úrovně e-mailů",
+          "brevo_recipient_email_notify": "Brevo příjemce (notify)",
+          "brevo_recipient_email_limit": "Brevo příjemce (limit)",
+          "brevo_recipient_email_shutdown": "Brevo příjemce (shutdown)",
+          "report_retention_max_files": "Retence reportů (max souborů, 0=off)",
+          "report_retention_max_age_days": "Retence reportů (max stáří ve dnech, 0=off)",
+          "mobile_notify_enabled": "Povolit mobilní notifikace",
+          "mobile_notify_targets_notify": "Zařízení pro notify (úroveň notify)",
+          "mobile_notify_targets_limit": "Zařízení pro notify (úroveň limit)",
+          "mobile_notify_targets_shutdown": "Zařízení pro notify (úroveň shutdown)",
+          "mobile_notify_urgent_notify": "Urgentní notifikace (úroveň notify)",
+          "mobile_notify_urgent_limit": "Urgentní notifikace (úroveň limit)",
+          "mobile_notify_urgent_shutdown": "Urgentní notifikace (úroveň shutdown)"
+        }
+      },
+      "rule": {
+        "title": "Pravidlo",
+        "description": "Nastavte název pravidla a typ dat.",
+        "data": {
+          "rule_name": "Název pravidla",
+          "data_type": "Typ dat"
+        }
+      },
+      "rule_numeric": {
+        "title": "Numerické pravidlo",
+        "description": "Vyberte vstupy a režim závažnosti.",
+        "data": {
+          "entities": "Entity",
+          "aggregate": "Agregace",
+          "severity_mode": "Režim závažnosti"
+        }
+      },
+      "rule_numeric_simple": {
+        "title": "Numerické pravidlo (simple)",
+        "description": "Nastavte podmínku a prahy.",
+        "data": {
+          "condition": "Podmínka",
+          "threshold": "Prahová hodnota",
+          "threshold_low": "Spodní mez (between)",
+          "threshold_high": "Horní mez (between)",
+          "duration_seconds": "Minimální doba porušení (sekundy)",
+          "interval_seconds": "Vyhodnocovací interval (sekundy)",
+          "level": "Akční úroveň",
+          "latched": "Latched (vyžaduje reset)",
+          "unknown_handling": "Chování při unknown",
+          "notify_email": "E-mail notifikace (toto pravidlo)",
+          "notify_mobile": "Mobilní notifikace (toto pravidlo)"
+        }
+      },
+      "rule_numeric_semafor": {
+        "title": "Numerické pravidlo (semafor)",
+        "description": "Nastavte prahy a časy pro úrovně.",
+        "data": {
+          "direction": "Směr",
+          "notify_threshold": "Notify práh",
+          "notify_duration_seconds": "Notify doba (sekundy)",
+          "limit_threshold": "Limit práh",
+          "limit_duration_seconds": "Limit doba (sekundy)",
+          "shutdown_threshold": "Shutdown práh",
+          "shutdown_duration_seconds": "Shutdown doba (sekundy)",
+          "interval_seconds": "Vyhodnocovací interval (sekundy)",
+          "latched": "Latched (vyžaduje reset)",
+          "unknown_handling": "Chování při unknown",
+          "notify_email": "E-mail notifikace (toto pravidlo)",
+          "notify_mobile": "Mobilní notifikace (toto pravidlo)"
+        }
+      },
+      "rule_binary": {
+        "title": "Binární pravidlo",
+        "description": "Vyberte entity a agregaci.",
+        "data": {
+          "entities": "Entity",
+          "aggregate": "Agregace"
+        }
+      },
+      "rule_binary_state": {
+        "title": "Binární pravidlo (any/all)",
+        "description": "Nastavte podmínku on/off.",
+        "data": {
+          "condition": "Podmínka",
+          "duration_seconds": "Minimální doba porušení (sekundy)",
+          "interval_seconds": "Vyhodnocovací interval (sekundy)",
+          "level": "Akční úroveň",
+          "latched": "Latched (vyžaduje reset)",
+          "unknown_handling": "Chování při unknown",
+          "notify_email": "E-mail notifikace (toto pravidlo)",
+          "notify_mobile": "Mobilní notifikace (toto pravidlo)"
+        }
+      },
+      "rule_binary_count": {
+        "title": "Binární pravidlo (count)",
+        "description": "Vyberte režim závažnosti.",
+        "data": {
+          "severity_mode": "Režim závažnosti"
+        }
+      },
+      "rule_binary_count_simple": {
+        "title": "Binární pravidlo (count, simple)",
+        "description": "Nastavte podmínku počtu a prahy.",
+        "data": {
+          "condition": "Podmínka",
+          "threshold": "Prahová hodnota",
+          "threshold_low": "Spodní mez (between)",
+          "threshold_high": "Horní mez (between)",
+          "duration_seconds": "Minimální doba porušení (sekundy)",
+          "interval_seconds": "Vyhodnocovací interval (sekundy)",
+          "level": "Akční úroveň",
+          "latched": "Latched (vyžaduje reset)",
+          "unknown_handling": "Chování při unknown",
+          "notify_email": "E-mail notifikace (toto pravidlo)",
+          "notify_mobile": "Mobilní notifikace (toto pravidlo)"
+        }
+      },
+      "rule_binary_count_semafor": {
+        "title": "Binární pravidlo (count, semafor)",
+        "description": "Nastavte prahy a časy pro úrovně.",
+        "data": {
+          "direction": "Směr",
+          "notify_threshold": "Notify počet",
+          "notify_duration_seconds": "Notify doba (sekundy)",
+          "limit_threshold": "Limit počet",
+          "limit_duration_seconds": "Limit doba (sekundy)",
+          "shutdown_threshold": "Shutdown počet",
+          "shutdown_duration_seconds": "Shutdown doba (sekundy)",
+          "interval_seconds": "Vyhodnocovací interval (sekundy)",
+          "latched": "Latched (vyžaduje reset)",
+          "unknown_handling": "Chování při unknown",
+          "notify_email": "E-mail notifikace (toto pravidlo)",
+          "notify_mobile": "Mobilní notifikace (toto pravidlo)"
+        }
+      },
+      "rule_text": {
+        "title": "Textové pravidlo",
+        "description": "Nastavte porovnání textu.",
+        "data": {
+          "entities": "Entity",
+          "aggregate": "Agregace",
+          "condition": "Podmínka",
+          "text_match": "Hledaný text",
+          "duration_seconds": "Minimální doba porušení (sekundy)",
+          "interval_seconds": "Vyhodnocovací interval (sekundy)",
+          "level": "Akční úroveň",
+          "latched": "Latched (vyžaduje reset)",
+          "unknown_handling": "Chování při unknown",
+          "text_case_sensitive": "Rozlišovat velikost písmen",
+          "text_trim": "Ořezat mezery",
+          "notify_email": "E-mail notifikace (toto pravidlo)",
+          "notify_mobile": "Mobilní notifikace (toto pravidlo)"
+        }
+      },
+      "add_rule": {
+        "title": "Přidat další pravidlo?",
+        "data": {
+          "add_another": "Přidat další pravidlo"
+        }
+      }
+    },
+    "error": {
+      "invalid_number": "Neplatné číslo",
+      "invalid_level": "Neplatná úroveň",
+      "min_1": "Hodnota musí být alespoň 1",
+      "min_0": "Hodnota musí být alespoň 0",
+      "interval_gt_duration": "Interval musí být menší nebo roven délce trvání",
+      "invalid_data_type": "Neplatný typ dat",
+      "invalid_aggregate": "Neplatná agregace",
+      "invalid_condition": "Neplatná podmínka",
+      "invalid_unknown": "Neplatné chování při unknown",
+      "invalid_severity_mode": "Neplatný režim závažnosti",
+      "invalid_direction": "Neplatný směr",
+      "thresholds_required": "Prahová hodnota je povinná",
+      "thresholds_order": "Spodní mez musí být <= horní mez",
+      "entities_required": "Je potřeba vybrat alespoň jednu entitu",
+      "required": "Povinné",
+      "rules_required": "Je potřeba alespoň jedno pravidlo",
+      "invalid_report_mode": "Neplatný režim reportu",
+      "invalid_email_levels": "Neplatné úrovně e-mailů",
+      "invalid_import_mode": "Neplatný režim importu",
+      "invalid_rule": "Neplatné pravidlo",
+      "import_invalid_json": "Neplatný JSON importu",
+      "import_invalid_rules": "Import musí obsahovat seznam pravidel",
+      "import_invalid_rule": "Import obsahuje neplatné pravidlo",
+      "import_rules_required": "Import musí obsahovat alespoň jedno pravidlo",
+      "import_duplicate_rule_id": "Import obsahuje duplicitní ID pravidel",
+      "import_conflict": "Import koliduje s existujícími ID pravidel",
+      "semafor_levels_required": "Je potřeba alespoň jedna úroveň semaforu",
+      "semafor_order": "Prahy semaforu nejsou ve správném pořadí",
+      "duration_required": "Doba je povinná"
+    }
+  },
+  "options": {
+    "step": {
+      "user": {
+        "title": "Možnosti Emergency Stop",
+        "description": "Upravit globální reportování a e-mail.",
+        "data": {
+          "report_mode": "Detail reportu",
+          "report_domains": "Reportované domény (rozšířené)",
+          "report_entity_ids": "Reportované entity (jen rozšířené)",
+          "brevo_api_key": "Brevo API klíč",
+          "brevo_sender_email": "Brevo odesílatel",
+          "brevo_recipient_email": "Brevo příjemce",
+          "email_levels": "Úrovně e-mailů",
+          "brevo_recipient_email_notify": "Brevo příjemce (notify)",
+          "brevo_recipient_email_limit": "Brevo příjemce (limit)",
+          "brevo_recipient_email_shutdown": "Brevo příjemce (shutdown)",
+          "report_retention_max_files": "Retence reportů (max souborů, 0=off)",
+          "report_retention_max_age_days": "Retence reportů (max stáří ve dnech, 0=off)",
+          "mobile_notify_enabled": "Povolit mobilní notifikace",
+          "mobile_notify_targets_notify": "Zařízení pro notify (úroveň notify)",
+          "mobile_notify_targets_limit": "Zařízení pro notify (úroveň limit)",
+          "mobile_notify_targets_shutdown": "Zařízení pro notify (úroveň shutdown)",
+          "mobile_notify_urgent_notify": "Urgentní notifikace (úroveň notify)",
+          "mobile_notify_urgent_limit": "Urgentní notifikace (úroveň limit)",
+          "mobile_notify_urgent_shutdown": "Urgentní notifikace (úroveň shutdown)"
+        }
+      },
+      "rules_action": {
+        "title": "Pravidla",
+        "description": "Přidejte, upravte nebo smažte pravidla.",
+        "data": {
+          "rules_action": "Akce s pravidly"
+        }
+      },
+      "rule_select": {
+        "title": "Výběr pravidla",
+        "description": "Vyberte pravidlo pro úpravu nebo smazání.",
+        "data": {
+          "rule_id": "Pravidlo"
+        }
+      },
+      "rule_import": {
+        "title": "Import pravidel",
+        "description": "Vložte exportovaný JSON pravidel a zvolte způsob aplikace.",
+        "data": {
+          "import_mode": "Režim importu",
+          "import_rules_json": "JSON pravidel"
+        }
+      },
+      "rule_export": {
+        "title": "Export pravidel",
+        "description": "Pravidla byla exportována do {path}.",
+        "data": {}
+      },
+      "rule": {
+        "title": "Pravidlo",
+        "description": "Nastavte název pravidla a typ dat.",
+        "data": {
+          "rule_name": "Název pravidla",
+          "data_type": "Typ dat"
+        }
+      },
+      "rule_numeric": {
+        "title": "Numerické pravidlo",
+        "description": "Vyberte vstupy a režim závažnosti.",
+        "data": {
+          "entities": "Entity",
+          "aggregate": "Agregace",
+          "severity_mode": "Režim závažnosti"
+        }
+      },
+      "rule_numeric_simple": {
+        "title": "Numerické pravidlo (simple)",
+        "description": "Nastavte podmínku a prahy.",
+        "data": {
+          "condition": "Podmínka",
+          "threshold": "Prahová hodnota",
+          "threshold_low": "Spodní mez (between)",
+          "threshold_high": "Horní mez (between)",
+          "duration_seconds": "Minimální doba porušení (sekundy)",
+          "interval_seconds": "Vyhodnocovací interval (sekundy)",
+          "level": "Akční úroveň",
+          "latched": "Latched (vyžaduje reset)",
+          "unknown_handling": "Chování při unknown",
+          "notify_email": "E-mail notifikace (toto pravidlo)",
+          "notify_mobile": "Mobilní notifikace (toto pravidlo)"
+        }
+      },
+      "rule_numeric_semafor": {
+        "title": "Numerické pravidlo (semafor)",
+        "description": "Nastavte prahy a časy pro úrovně.",
+        "data": {
+          "direction": "Směr",
+          "notify_threshold": "Notify práh",
+          "notify_duration_seconds": "Notify doba (sekundy)",
+          "limit_threshold": "Limit práh",
+          "limit_duration_seconds": "Limit doba (sekundy)",
+          "shutdown_threshold": "Shutdown práh",
+          "shutdown_duration_seconds": "Shutdown doba (sekundy)",
+          "interval_seconds": "Vyhodnocovací interval (sekundy)",
+          "latched": "Latched (vyžaduje reset)",
+          "unknown_handling": "Chování při unknown",
+          "notify_email": "E-mail notifikace (toto pravidlo)",
+          "notify_mobile": "Mobilní notifikace (toto pravidlo)"
+        }
+      },
+      "rule_binary": {
+        "title": "Binární pravidlo",
+        "description": "Vyberte entity a agregaci.",
+        "data": {
+          "entities": "Entity",
+          "aggregate": "Agregace"
+        }
+      },
+      "rule_binary_state": {
+        "title": "Binární pravidlo (any/all)",
+        "description": "Nastavte podmínku on/off.",
+        "data": {
+          "condition": "Podmínka",
+          "duration_seconds": "Minimální doba porušení (sekundy)",
+          "interval_seconds": "Vyhodnocovací interval (sekundy)",
+          "level": "Akční úroveň",
+          "latched": "Latched (vyžaduje reset)",
+          "unknown_handling": "Chování při unknown",
+          "notify_email": "E-mail notifikace (toto pravidlo)",
+          "notify_mobile": "Mobilní notifikace (toto pravidlo)"
+        }
+      },
+      "rule_binary_count": {
+        "title": "Binární pravidlo (count)",
+        "description": "Vyberte režim závažnosti.",
+        "data": {
+          "severity_mode": "Režim závažnosti"
+        }
+      },
+      "rule_binary_count_simple": {
+        "title": "Binární pravidlo (count, simple)",
+        "description": "Nastavte podmínku počtu a prahy.",
+        "data": {
+          "condition": "Podmínka",
+          "threshold": "Prahová hodnota",
+          "threshold_low": "Spodní mez (between)",
+          "threshold_high": "Horní mez (between)",
+          "duration_seconds": "Minimální doba porušení (sekundy)",
+          "interval_seconds": "Vyhodnocovací interval (sekundy)",
+          "level": "Akční úroveň",
+          "latched": "Latched (vyžaduje reset)",
+          "unknown_handling": "Chování při unknown",
+          "notify_email": "E-mail notifikace (toto pravidlo)",
+          "notify_mobile": "Mobilní notifikace (toto pravidlo)"
+        }
+      },
+      "rule_binary_count_semafor": {
+        "title": "Binární pravidlo (count, semafor)",
+        "description": "Nastavte prahy a časy pro úrovně.",
+        "data": {
+          "direction": "Směr",
+          "notify_threshold": "Notify počet",
+          "notify_duration_seconds": "Notify doba (sekundy)",
+          "limit_threshold": "Limit počet",
+          "limit_duration_seconds": "Limit doba (sekundy)",
+          "shutdown_threshold": "Shutdown počet",
+          "shutdown_duration_seconds": "Shutdown doba (sekundy)",
+          "interval_seconds": "Vyhodnocovací interval (sekundy)",
+          "latched": "Latched (vyžaduje reset)",
+          "unknown_handling": "Chování při unknown",
+          "notify_email": "E-mail notifikace (toto pravidlo)",
+          "notify_mobile": "Mobilní notifikace (toto pravidlo)"
+        }
+      },
+      "rule_text": {
+        "title": "Textové pravidlo",
+        "description": "Nastavte porovnání textu.",
+        "data": {
+          "entities": "Entity",
+          "aggregate": "Agregace",
+          "condition": "Podmínka",
+          "text_match": "Hledaný text",
+          "duration_seconds": "Minimální doba porušení (sekundy)",
+          "interval_seconds": "Vyhodnocovací interval (sekundy)",
+          "level": "Akční úroveň",
+          "latched": "Latched (vyžaduje reset)",
+          "unknown_handling": "Chování při unknown",
+          "text_case_sensitive": "Rozlišovat velikost písmen",
+          "text_trim": "Ořezat mezery",
+          "notify_email": "E-mail notifikace (toto pravidlo)",
+          "notify_mobile": "Mobilní notifikace (toto pravidlo)"
+        }
+      },
+      "add_rule": {
+        "title": "Přidat další pravidlo?",
+        "data": {
+          "add_another": "Přidat další pravidlo"
+        }
+      }
+    },
+    "error": {
+      "invalid_number": "Neplatné číslo",
+      "invalid_level": "Neplatná úroveň",
+      "min_1": "Hodnota musí být alespoň 1",
+      "min_0": "Hodnota musí být alespoň 0",
+      "interval_gt_duration": "Interval musí být menší nebo roven délce trvání",
+      "invalid_data_type": "Neplatný typ dat",
+      "invalid_aggregate": "Neplatná agregace",
+      "invalid_condition": "Neplatná podmínka",
+      "invalid_unknown": "Neplatné chování při unknown",
+      "invalid_severity_mode": "Neplatný režim závažnosti",
+      "invalid_direction": "Neplatný směr",
+      "thresholds_required": "Prahová hodnota je povinná",
+      "thresholds_order": "Spodní mez musí být <= horní mez",
+      "entities_required": "Je potřeba vybrat alespoň jednu entitu",
+      "required": "Povinné",
+      "rules_required": "Je potřeba alespoň jedno pravidlo",
+      "invalid_report_mode": "Neplatný režim reportu",
+      "invalid_email_levels": "Neplatné úrovně e-mailů",
+      "invalid_import_mode": "Neplatný režim importu",
+      "import_invalid_json": "Neplatný JSON importu",
+      "import_invalid_rules": "Import musí obsahovat seznam pravidel",
+      "import_invalid_rule": "Import obsahuje neplatné pravidlo",
+      "import_rules_required": "Import musí obsahovat alespoň jedno pravidlo",
+      "import_duplicate_rule_id": "Import obsahuje duplicitní ID pravidel",
+      "import_conflict": "Import koliduje s existujícími ID pravidel",
+      "export_failed": "Export selhal",
+      "semafor_levels_required": "Je potřeba alespoň jedna úroveň semaforu",
+      "semafor_order": "Prahy semaforu nejsou ve správném pořadí",
+      "duration_required": "Doba je povinná"
+    }
+  }
+}

@@ -1,0 +1,432 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Emergency Stop",
+        "description": "Configure global reporting and email settings.",
+        "data": {
+          "report_mode": "Report detail",
+          "report_domains": "Report domains (extended)",
+          "report_entity_ids": "Report entities (extended only)",
+          "brevo_api_key": "Brevo API key",
+          "brevo_sender_email": "Brevo sender email",
+          "brevo_recipient_email": "Brevo recipient email",
+          "email_levels": "Email levels",
+          "brevo_recipient_email_notify": "Brevo recipient (notify)",
+          "brevo_recipient_email_limit": "Brevo recipient (limit)",
+          "brevo_recipient_email_shutdown": "Brevo recipient (shutdown)",
+          "report_retention_max_files": "Report retention (max files, 0=off)",
+          "report_retention_max_age_days": "Report retention (max age days, 0=off)",
+          "mobile_notify_enabled": "Enable mobile notifications",
+          "mobile_notify_targets_notify": "Notify targets (notify level)",
+          "mobile_notify_targets_limit": "Notify targets (limit level)",
+          "mobile_notify_targets_shutdown": "Notify targets (shutdown level)",
+          "mobile_notify_urgent_notify": "Urgent notify (notify level)",
+          "mobile_notify_urgent_limit": "Urgent notify (limit level)",
+          "mobile_notify_urgent_shutdown": "Urgent notify (shutdown level)"
+        }
+      },
+      "rule": {
+        "title": "Rule",
+        "description": "Define rule name and data type.",
+        "data": {
+          "rule_name": "Rule name",
+          "data_type": "Data type"
+        }
+      },
+      "rule_numeric": {
+        "title": "Numeric rule",
+        "description": "Select inputs and severity mode.",
+        "data": {
+          "entities": "Entities",
+          "aggregate": "Aggregation",
+          "severity_mode": "Severity mode"
+        }
+      },
+      "rule_numeric_simple": {
+        "title": "Numeric rule (simple)",
+        "description": "Configure numeric condition and thresholds.",
+        "data": {
+          "condition": "Condition",
+          "threshold": "Threshold",
+          "threshold_low": "Threshold low (between)",
+          "threshold_high": "Threshold high (between)",
+          "duration_seconds": "Minimum violation duration (seconds)",
+          "interval_seconds": "Evaluation interval (seconds)",
+          "level": "Action level",
+          "latched": "Latched (requires reset)",
+          "unknown_handling": "Unknown handling",
+          "notify_email": "Email notifications (this rule)",
+          "notify_mobile": "Mobile notifications (this rule)"
+        }
+      },
+      "rule_numeric_semafor": {
+        "title": "Numeric rule (semafor)",
+        "description": "Configure thresholds and durations per level.",
+        "data": {
+          "direction": "Direction",
+          "notify_threshold": "Notify threshold",
+          "notify_duration_seconds": "Notify duration (seconds)",
+          "limit_threshold": "Limit threshold",
+          "limit_duration_seconds": "Limit duration (seconds)",
+          "shutdown_threshold": "Shutdown threshold",
+          "shutdown_duration_seconds": "Shutdown duration (seconds)",
+          "interval_seconds": "Evaluation interval (seconds)",
+          "latched": "Latched (requires reset)",
+          "unknown_handling": "Unknown handling",
+          "notify_email": "Email notifications (this rule)",
+          "notify_mobile": "Mobile notifications (this rule)"
+        }
+      },
+      "rule_binary": {
+        "title": "Binary rule",
+        "description": "Select entities and aggregation.",
+        "data": {
+          "entities": "Entities",
+          "aggregate": "Aggregation"
+        }
+      },
+      "rule_binary_state": {
+        "title": "Binary rule (any/all)",
+        "description": "Configure on/off condition.",
+        "data": {
+          "condition": "Condition",
+          "duration_seconds": "Minimum violation duration (seconds)",
+          "interval_seconds": "Evaluation interval (seconds)",
+          "level": "Action level",
+          "latched": "Latched (requires reset)",
+          "unknown_handling": "Unknown handling",
+          "notify_email": "Email notifications (this rule)",
+          "notify_mobile": "Mobile notifications (this rule)"
+        }
+      },
+      "rule_binary_count": {
+        "title": "Binary rule (count)",
+        "description": "Select severity mode.",
+        "data": {
+          "severity_mode": "Severity mode"
+        }
+      },
+      "rule_binary_count_simple": {
+        "title": "Binary rule (count, simple)",
+        "description": "Configure count condition and thresholds.",
+        "data": {
+          "condition": "Condition",
+          "threshold": "Threshold",
+          "threshold_low": "Threshold low (between)",
+          "threshold_high": "Threshold high (between)",
+          "duration_seconds": "Minimum violation duration (seconds)",
+          "interval_seconds": "Evaluation interval (seconds)",
+          "level": "Action level",
+          "latched": "Latched (requires reset)",
+          "unknown_handling": "Unknown handling",
+          "notify_email": "Email notifications (this rule)",
+          "notify_mobile": "Mobile notifications (this rule)"
+        }
+      },
+      "rule_binary_count_semafor": {
+        "title": "Binary rule (count, semafor)",
+        "description": "Configure thresholds and durations per level.",
+        "data": {
+          "direction": "Direction",
+          "notify_threshold": "Notify count",
+          "notify_duration_seconds": "Notify duration (seconds)",
+          "limit_threshold": "Limit count",
+          "limit_duration_seconds": "Limit duration (seconds)",
+          "shutdown_threshold": "Shutdown count",
+          "shutdown_duration_seconds": "Shutdown duration (seconds)",
+          "interval_seconds": "Evaluation interval (seconds)",
+          "latched": "Latched (requires reset)",
+          "unknown_handling": "Unknown handling",
+          "notify_email": "Email notifications (this rule)",
+          "notify_mobile": "Mobile notifications (this rule)"
+        }
+      },
+      "rule_text": {
+        "title": "Text rule",
+        "description": "Configure text matching.",
+        "data": {
+          "entities": "Entities",
+          "aggregate": "Aggregation",
+          "condition": "Condition",
+          "text_match": "Match text",
+          "duration_seconds": "Minimum violation duration (seconds)",
+          "interval_seconds": "Evaluation interval (seconds)",
+          "level": "Action level",
+          "latched": "Latched (requires reset)",
+          "unknown_handling": "Unknown handling",
+          "text_case_sensitive": "Case sensitive",
+          "text_trim": "Trim whitespace",
+          "notify_email": "Email notifications (this rule)",
+          "notify_mobile": "Mobile notifications (this rule)"
+        }
+      },
+      "add_rule": {
+        "title": "Add another rule?",
+        "data": {
+          "add_another": "Add another rule"
+        }
+      }
+    },
+    "error": {
+      "invalid_number": "Invalid number",
+      "invalid_level": "Invalid level",
+      "min_1": "Value must be at least 1",
+      "min_0": "Value must be at least 0",
+      "interval_gt_duration": "Interval must be less than or equal to duration",
+      "invalid_data_type": "Invalid data type",
+      "invalid_aggregate": "Invalid aggregation",
+      "invalid_condition": "Invalid condition",
+      "invalid_unknown": "Invalid unknown handling",
+      "invalid_severity_mode": "Invalid severity mode",
+      "invalid_direction": "Invalid direction",
+      "thresholds_required": "Threshold is required",
+      "thresholds_order": "Low threshold must be <= high threshold",
+      "entities_required": "At least one entity is required",
+      "required": "Required",
+      "rules_required": "At least one rule is required",
+      "invalid_report_mode": "Invalid report mode",
+      "invalid_email_levels": "Invalid email levels",
+      "invalid_import_mode": "Invalid import mode",
+      "invalid_rule": "Invalid rule",
+      "import_invalid_json": "Invalid import JSON",
+      "import_invalid_rules": "Import payload must contain a rules list",
+      "import_invalid_rule": "Import contains an invalid rule",
+      "import_rules_required": "At least one rule is required in the import",
+      "import_duplicate_rule_id": "Import contains duplicate rule IDs",
+      "import_conflict": "Import conflicts with existing rule IDs",
+      "export_failed": "Export failed",
+      "semafor_levels_required": "At least one semafor level is required",
+      "semafor_order": "Semafor thresholds are in wrong order",
+      "duration_required": "Duration is required"
+    }
+  },
+  "options": {
+    "step": {
+      "user": {
+        "title": "Emergency Stop options",
+        "description": "Update global reporting and email settings.",
+        "data": {
+          "report_mode": "Report detail",
+          "report_domains": "Report domains (extended)",
+          "report_entity_ids": "Report entities (extended only)",
+          "brevo_api_key": "Brevo API key",
+          "brevo_sender_email": "Brevo sender email",
+          "brevo_recipient_email": "Brevo recipient email",
+          "email_levels": "Email levels",
+          "brevo_recipient_email_notify": "Brevo recipient (notify)",
+          "brevo_recipient_email_limit": "Brevo recipient (limit)",
+          "brevo_recipient_email_shutdown": "Brevo recipient (shutdown)",
+          "report_retention_max_files": "Report retention (max files, 0=off)",
+          "report_retention_max_age_days": "Report retention (max age days, 0=off)",
+          "mobile_notify_enabled": "Enable mobile notifications",
+          "mobile_notify_targets_notify": "Notify targets (notify level)",
+          "mobile_notify_targets_limit": "Notify targets (limit level)",
+          "mobile_notify_targets_shutdown": "Notify targets (shutdown level)",
+          "mobile_notify_urgent_notify": "Urgent notify (notify level)",
+          "mobile_notify_urgent_limit": "Urgent notify (limit level)",
+          "mobile_notify_urgent_shutdown": "Urgent notify (shutdown level)"
+        }
+      },
+      "rules_action": {
+        "title": "Rules",
+        "description": "Add, edit, or delete rules.",
+        "data": {
+          "rules_action": "Rule action"
+        }
+      },
+      "rule_select": {
+        "title": "Select rule",
+        "description": "Choose a rule to edit or delete.",
+        "data": {
+          "rule_id": "Rule"
+        }
+      },
+      "rule_import": {
+        "title": "Import rules",
+        "description": "Paste exported rules JSON and choose how to apply it.",
+        "data": {
+          "import_mode": "Import mode",
+          "import_rules_json": "Rules JSON"
+        }
+      },
+      "rule_export": {
+        "title": "Export rules",
+        "description": "Rules exported to {path}.",
+        "data": {}
+      },
+      "rule": {
+        "title": "Rule",
+        "description": "Define rule name and data type.",
+        "data": {
+          "rule_name": "Rule name",
+          "data_type": "Data type"
+        }
+      },
+      "rule_numeric": {
+        "title": "Numeric rule",
+        "description": "Select inputs and severity mode.",
+        "data": {
+          "entities": "Entities",
+          "aggregate": "Aggregation",
+          "severity_mode": "Severity mode"
+        }
+      },
+      "rule_numeric_simple": {
+        "title": "Numeric rule (simple)",
+        "description": "Configure numeric condition and thresholds.",
+        "data": {
+          "condition": "Condition",
+          "threshold": "Threshold",
+          "threshold_low": "Threshold low (between)",
+          "threshold_high": "Threshold high (between)",
+          "duration_seconds": "Minimum violation duration (seconds)",
+          "interval_seconds": "Evaluation interval (seconds)",
+          "level": "Action level",
+          "latched": "Latched (requires reset)",
+          "unknown_handling": "Unknown handling",
+          "notify_email": "Email notifications (this rule)",
+          "notify_mobile": "Mobile notifications (this rule)"
+        }
+      },
+      "rule_numeric_semafor": {
+        "title": "Numeric rule (semafor)",
+        "description": "Configure thresholds and durations per level.",
+        "data": {
+          "direction": "Direction",
+          "notify_threshold": "Notify threshold",
+          "notify_duration_seconds": "Notify duration (seconds)",
+          "limit_threshold": "Limit threshold",
+          "limit_duration_seconds": "Limit duration (seconds)",
+          "shutdown_threshold": "Shutdown threshold",
+          "shutdown_duration_seconds": "Shutdown duration (seconds)",
+          "interval_seconds": "Evaluation interval (seconds)",
+          "latched": "Latched (requires reset)",
+          "unknown_handling": "Unknown handling",
+          "notify_email": "Email notifications (this rule)",
+          "notify_mobile": "Mobile notifications (this rule)"
+        }
+      },
+      "rule_binary": {
+        "title": "Binary rule",
+        "description": "Select entities and aggregation.",
+        "data": {
+          "entities": "Entities",
+          "aggregate": "Aggregation"
+        }
+      },
+      "rule_binary_state": {
+        "title": "Binary rule (any/all)",
+        "description": "Configure on/off condition.",
+        "data": {
+          "condition": "Condition",
+          "duration_seconds": "Minimum violation duration (seconds)",
+          "interval_seconds": "Evaluation interval (seconds)",
+          "level": "Action level",
+          "latched": "Latched (requires reset)",
+          "unknown_handling": "Unknown handling",
+          "notify_email": "Email notifications (this rule)",
+          "notify_mobile": "Mobile notifications (this rule)"
+        }
+      },
+      "rule_binary_count": {
+        "title": "Binary rule (count)",
+        "description": "Select severity mode.",
+        "data": {
+          "severity_mode": "Severity mode"
+        }
+      },
+      "rule_binary_count_simple": {
+        "title": "Binary rule (count, simple)",
+        "description": "Configure count condition and thresholds.",
+        "data": {
+          "condition": "Condition",
+          "threshold": "Threshold",
+          "threshold_low": "Threshold low (between)",
+          "threshold_high": "Threshold high (between)",
+          "duration_seconds": "Minimum violation duration (seconds)",
+          "interval_seconds": "Evaluation interval (seconds)",
+          "level": "Action level",
+          "latched": "Latched (requires reset)",
+          "unknown_handling": "Unknown handling",
+          "notify_email": "Email notifications (this rule)",
+          "notify_mobile": "Mobile notifications (this rule)"
+        }
+      },
+      "rule_binary_count_semafor": {
+        "title": "Binary rule (count, semafor)",
+        "description": "Configure thresholds and durations per level.",
+        "data": {
+          "direction": "Direction",
+          "notify_threshold": "Notify count",
+          "notify_duration_seconds": "Notify duration (seconds)",
+          "limit_threshold": "Limit count",
+          "limit_duration_seconds": "Limit duration (seconds)",
+          "shutdown_threshold": "Shutdown count",
+          "shutdown_duration_seconds": "Shutdown duration (seconds)",
+          "interval_seconds": "Evaluation interval (seconds)",
+          "latched": "Latched (requires reset)",
+          "unknown_handling": "Unknown handling",
+          "notify_email": "Email notifications (this rule)",
+          "notify_mobile": "Mobile notifications (this rule)"
+        }
+      },
+      "rule_text": {
+        "title": "Text rule",
+        "description": "Configure text matching.",
+        "data": {
+          "entities": "Entities",
+          "aggregate": "Aggregation",
+          "condition": "Condition",
+          "text_match": "Match text",
+          "duration_seconds": "Minimum violation duration (seconds)",
+          "interval_seconds": "Evaluation interval (seconds)",
+          "level": "Action level",
+          "latched": "Latched (requires reset)",
+          "unknown_handling": "Unknown handling",
+          "text_case_sensitive": "Case sensitive",
+          "text_trim": "Trim whitespace",
+          "notify_email": "Email notifications (this rule)",
+          "notify_mobile": "Mobile notifications (this rule)"
+        }
+      },
+      "add_rule": {
+        "title": "Add another rule?",
+        "data": {
+          "add_another": "Add another rule"
+        }
+      }
+    },
+    "error": {
+      "invalid_number": "Invalid number",
+      "invalid_level": "Invalid level",
+      "min_1": "Value must be at least 1",
+      "min_0": "Value must be at least 0",
+      "interval_gt_duration": "Interval must be less than or equal to duration",
+      "invalid_data_type": "Invalid data type",
+      "invalid_aggregate": "Invalid aggregation",
+      "invalid_condition": "Invalid condition",
+      "invalid_unknown": "Invalid unknown handling",
+      "invalid_severity_mode": "Invalid severity mode",
+      "invalid_direction": "Invalid direction",
+      "thresholds_required": "Threshold is required",
+      "thresholds_order": "Low threshold must be <= high threshold",
+      "entities_required": "At least one entity is required",
+      "required": "Required",
+      "rules_required": "At least one rule is required",
+      "invalid_report_mode": "Invalid report mode",
+      "invalid_email_levels": "Invalid email levels",
+      "invalid_import_mode": "Invalid import mode",
+      "import_invalid_json": "Invalid import JSON",
+      "import_invalid_rules": "Import payload must contain a rules list",
+      "import_invalid_rule": "Import contains an invalid rule",
+      "import_rules_required": "At least one rule is required in the import",
+      "import_duplicate_rule_id": "Import contains duplicate rule IDs",
+      "import_conflict": "Import conflicts with existing rule IDs",
+      "export_failed": "Export failed",
+      "semafor_levels_required": "At least one semafor level is required",
+      "semafor_order": "Semafor thresholds are in wrong order",
+      "duration_required": "Duration is required"
+    }
+  }
+}
