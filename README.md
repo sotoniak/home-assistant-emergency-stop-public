@@ -1,5 +1,10 @@
 # Emergency Stop (Home Assistant)
 
+[![HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=sotoniak&repository=home-assistant-emergency-stop-public)
+[![Release](https://img.shields.io/github/v/release/sotoniak/home-assistant-emergency-stop-public?display_name=tag)](https://github.com/sotoniak/home-assistant-emergency-stop-public/releases)
+[![Validate](https://github.com/sotoniak/home-assistant-emergency-stop-public/actions/workflows/validate.yaml/badge.svg)](https://github.com/sotoniak/home-assistant-emergency-stop-public/actions/workflows/validate.yaml)
+[![Hassfest](https://github.com/sotoniak/home-assistant-emergency-stop-public/actions/workflows/hassfest.yaml/badge.svg)](https://github.com/sotoniak/home-assistant-emergency-stop-public/actions/workflows/hassfest.yaml)
+
 Custom integration for Home Assistant that evaluates **dynamic, user-defined rules** over any entities and latches a central "Emergency Stop" when configured conditions are violated.
 
 ## Pitch
