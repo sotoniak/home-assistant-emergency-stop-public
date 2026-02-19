@@ -20,7 +20,13 @@ jobs:
         with:
           category: "integration"
       - name: HACS validation (branch)
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && github.repository == 'sotoniak/home-assistant-emergency-stop'
+        uses: "hacs/action@main"
+        with:
+          category: "integration"
+          repository: "sotoniak/home-assistant-emergency-stop-public"
+      - name: HACS validation (branch)
+        if: github.event_name != 'pull_request' && github.repository != 'sotoniak/home-assistant-emergency-stop'
         uses: "hacs/action@main"
         with:
           category: "integration"
