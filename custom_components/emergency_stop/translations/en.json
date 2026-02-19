@@ -1,6 +1,21 @@
 {
   "config": {
     "step": {
+      "setup": {
+        "title": "Emergency Stop",
+        "description": "Choose setup mode.",
+        "data": {
+          "setup_action": "Setup mode"
+        }
+      },
+      "setup_import": {
+        "title": "Import settings and rules",
+        "description": "Enter settings and rules file names from {directory}.",
+        "data": {
+          "import_settings_json": "Settings file name (.json)",
+          "import_rules_json": "Rules file name (.json)"
+        }
+      },
       "user": {
         "title": "Emergency Stop",
         "description": "Configure global reporting and email settings.",
@@ -190,8 +205,12 @@
       "invalid_import_mode": "Invalid import mode",
       "invalid_rule": "Invalid rule",
       "import_invalid_json": "Invalid import JSON",
+      "import_invalid_filename": "Import requires a JSON file name",
+      "import_file_not_found": "Import file not found in default directory",
+      "import_file_read_failed": "Import file could not be read",
       "import_invalid_rules": "Import payload must contain a rules list",
       "import_invalid_rule": "Import contains an invalid rule",
+      "import_invalid_settings": "Import payload must contain a settings object",
       "import_rules_required": "At least one rule is required in the import",
       "import_duplicate_rule_id": "Import contains duplicate rule IDs",
       "import_conflict": "Import conflicts with existing rule IDs",
@@ -202,6 +221,20 @@
   },
   "options": {
     "step": {
+      "menu": {
+        "title": "Emergency Stop options",
+        "description": "Choose what you want to configure.",
+        "data": {
+          "menu_action": "Action"
+        }
+      },
+      "settings_action": {
+        "title": "Settings",
+        "description": "Choose settings action.",
+        "data": {
+          "settings_action": "Settings action"
+        }
+      },
       "user": {
         "title": "Emergency Stop options",
         "description": "Update global reporting and email settings.",
@@ -243,10 +276,10 @@
       },
       "rule_import": {
         "title": "Import rules",
-        "description": "Paste exported rules JSON and choose how to apply it.",
+        "description": "Enter exported rules file name from {directory} and choose how to apply it.",
         "data": {
           "import_mode": "Import mode",
-          "import_rules_json": "Rules JSON"
+          "import_rules_json": "Rules file name (.json)"
         }
       },
       "rule_export": {
@@ -254,9 +287,16 @@
         "description": "Rules exported to {path}.",
         "data": {}
       },
-      "rule_export": {
-        "title": "Export rules",
-        "description": "Rules exported to {path}.",
+      "settings_import": {
+        "title": "Import settings",
+        "description": "Enter exported settings file name from {directory} (includes Brevo configuration).",
+        "data": {
+          "import_settings_json": "Settings file name (.json)"
+        }
+      },
+      "settings_export": {
+        "title": "Export settings",
+        "description": "Settings exported to {path}.",
         "data": {}
       },
       "rule": {
@@ -422,8 +462,12 @@
       "invalid_email_levels": "Invalid email levels",
       "invalid_import_mode": "Invalid import mode",
       "import_invalid_json": "Invalid import JSON",
+      "import_invalid_filename": "Import requires a JSON file name",
+      "import_file_not_found": "Import file not found in default directory",
+      "import_file_read_failed": "Import file could not be read",
       "import_invalid_rules": "Import payload must contain a rules list",
       "import_invalid_rule": "Import contains an invalid rule",
+      "import_invalid_settings": "Import payload must contain a settings object",
       "import_rules_required": "At least one rule is required in the import",
       "import_duplicate_rule_id": "Import contains duplicate rule IDs",
       "import_conflict": "Import conflicts with existing rule IDs",

@@ -33,6 +33,12 @@ Pokud je aktivních více pravidel, platí nejvyšší úroveň (`shutdown` > `l
 - Přímý trigger pro konkrétní pravidlo.
 - On, pokud je dané pravidlo aktivní.
 - Atributy obsahují konfiguraci pravidla i runtime stav.
+- Interpretace runtime hodnot:
+  - `last_aggregate` / `evaluation.aggregate`: poslední agregovaná hodnota pravidla.
+  - U numerického pravidla s `aggregate: max` jde o nejvyšší hodnotu ze všech vybraných entit.
+  - `last_entity` / `evaluation.entity_id`: entita, která agregovanou hodnotu dala (pro `max`/`min`).
+  - `last_match` / `evaluation.match`: v režimu `simple` boolean; v režimu `semafor` je záměrně `null`.
+  - `last_invalid_reason` / `evaluation.invalid_reason`: důvod nevalidního vyhodnocení (`unknown`, `no_valid_values` atd.); `null` znamená validní vstupy.
 
 ### Senzory
 
@@ -59,6 +65,14 @@ Pokud je aktivních více pravidel, platí nejvyšší úroveň (`shutdown` > `l
 - `emergency_stop.simulate_level`: simuluje level (notify/limit/shutdown/normal) pro testy.
 - `emergency_stop.clear_simulation`: zruší aktivní simulaci.
 
+Export/import nastavení je dostupný v Options UI (není jako service).
+Cesta exportu nastavení:
+- `/media/emergency-stop/config/emergency_stop_settings_<entry_id>_<timestamp>.json`
+
+Čistá instalace začíná volbou režimu nastavení:
+- `Custom setup`: ruční nastavení + průvodce pravidly.
+- `Import settings + rules`: zadání názvů exportovaných souborů nastavení/pravidel z `/media/emergency-stop/config`.
+
 ## E‑mail (volitelně)
 
 Nastavuje se přes Brevo (API key, sender, výchozí recipient). Vyberte úrovně e‑mailu (notify/limit/shutdown) a volitelně nastavte recipienty per level, které přepíší výchozí. Prázdné Brevo hodnoty znamenají vypnuto.
@@ -70,9 +84,28 @@ Subject: `Emergency Stop [level]`. `shutdown` má high priority.
 
 ## Úprava pravidel
 
-Úprava, smazání nebo import pravidel:
+Navigace v Options:
 - Settings → Devices & Services → Emergency Stop → Configure
-- V kroku pravidel vyberte **Upravit**, **Smazat** nebo **Importovat**.
+- Hlavní rozcestník:
+  - `Settings management`
+  - `Rules management`
+
+Akce v `Settings management`:
+- `Edit settings`
+- `Import settings`
+- `Export settings`
+
+Akce v `Rules management`:
+- `Add`
+- `Edit`
+- `Delete`
+- `Import`
+- `Export`
+- `Back`
+
+`Back` v Rules management uloží options a vrátí vás na hlavní rozcestník.
+Import/export nastavení obsahuje i Brevo konfiguraci (včetně API key), proto exportovaný JSON považujte za citlivý.
+Import používá názvy souborů z `/media/emergency-stop/config` (stejný adresář jako export).
 
 ## Report detail
 

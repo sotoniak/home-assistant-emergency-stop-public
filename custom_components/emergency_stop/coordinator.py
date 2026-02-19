@@ -387,6 +387,45 @@ class RuleEngine:
                 continue
             state.last_eval_monotonic = now_monotonic - (interval - offset)
 
+    @staticmethod
+    def _simple_state_signature(state: RuleRuntimeState) -> tuple[Any, ...]:
+        return (
+            state.active,
+            state.active_since,
+            state.last_match,
+            state.last_aggregate,
+            state.last_entity,
+            state.last_detail,
+            state.last_invalid_reason,
+            state.violation_started_at is not None,
+        )
+
+    @staticmethod
+    def _semafor_state_signature(
+        rule: RuleConfig, state: RuleRuntimeState
+    ) -> tuple[Any, ...]:
+        level_runtime = tuple(
+            (
+                level,
+                state.level_violation_started_at.get(level) is not None,
+                state.level_active_since.get(level),
+            )
+            for level in LEVEL_ORDER
+            if level in rule.levels
+        )
+        return (
+            state.active,
+            state.active_since,
+            state.current_level,
+            state.latched_level,
+            tuple(state.active_levels),
+            state.last_aggregate,
+            state.last_entity,
+            state.last_detail,
+            state.last_invalid_reason,
+            level_runtime,
+        )
+
     def evaluate(self, hass: HomeAssistant) -> None:
         now = dt_util.utcnow()
         now_iso = now.isoformat()
@@ -403,8 +442,8 @@ class RuleEngine:
             if rule.severity_mode == SEVERITY_MODE_SEMAFOR:
                 self._evaluate_semafor(rule, hass, state, now_iso, now_monotonic)
             else:
+                previous_signature = self._simple_state_signature(state)
                 result = self._evaluate_rule(rule, hass)
-                state.last_update = now_iso
                 state.last_match = result.match
                 state.last_aggregate = result.aggregate
                 state.last_entity = result.entity_id
@@ -424,6 +463,9 @@ class RuleEngine:
                         state.active = False
                         state.active_since = None
 
+                if self._simple_state_signature(state) != previous_signature:
+                    state.last_update = now_iso
+
     def _evaluate_rule(self, rule: RuleConfig, hass: HomeAssistant) -> RuleEvalResult:
         if rule.data_type == DATA_TYPE_NUMERIC:
             return self._evaluate_numeric(rule, hass)
@@ -439,6 +481,7 @@ class RuleEngine:
         now_iso: str,
         now_monotonic: float,
     ) -> None:
+        previous_signature = self._semafor_state_signature(rule, state)
         if rule.data_type == DATA_TYPE_NUMERIC:
             value, entity_id, invalid_reason = self._collect_numeric_value(rule, hass)
         elif rule.data_type == DATA_TYPE_BINARY and rule.aggregate == "count":
@@ -453,7 +496,6 @@ class RuleEngine:
             )
             value, entity_id, invalid_reason = None, None, "unsupported"
 
-        state.last_update = now_iso
         state.last_aggregate = value
         state.last_entity = entity_id
         state.last_invalid_reason = invalid_reason
@@ -525,6 +567,9 @@ class RuleEngine:
             state.last_detail = _format_semafor_detail(
                 rule, state.current_level, value, threshold
             )
+
+        if self._semafor_state_signature(rule, state) != previous_signature:
+            state.last_update = now_iso
 
     def _evaluate_numeric(self, rule: RuleConfig, hass: HomeAssistant) -> RuleEvalResult:
         values: list[tuple[str, float]] = []
@@ -814,6 +859,7 @@ class EmergencyStopCoordinator(DataUpdateCoordinator[EmergencyStopState]):
             self._rule_engine.rules,
             self._rule_engine.states,
             self._acknowledged,
+            previous=self._stop_state,
         )
         email_rules = [rule for rule in self._rule_engine.rules if rule.notify_email]
         mobile_rules = [rule for rule in self._rule_engine.rules if rule.notify_mobile]
@@ -909,6 +955,16 @@ class EmergencyStopCoordinator(DataUpdateCoordinator[EmergencyStopState]):
             self._write_report_file, export_path, export
         )
         _LOGGER.info("Emergency Stop rules exported to %s", export_path)
+        return export_path
+
+    async def async_export_settings(self) -> Path:
+        export = self._build_settings_export()
+        filename = export["file_name"]
+        export_path = REPORT_CONFIG_DIR / filename
+        await self.hass.async_add_executor_job(
+            self._write_report_file, export_path, export
+        )
+        _LOGGER.info("Emergency Stop settings exported to %s", export_path)
         return export_path
 
     async def async_send_test_notification(
@@ -1362,6 +1418,19 @@ class EmergencyStopCoordinator(DataUpdateCoordinator[EmergencyStopState]):
             "rules": rules_config,
         }
 
+    def _build_settings_export(self) -> dict[str, Any]:
+        now = dt_util.utcnow()
+        timestamp = now.strftime("%Y%m%dT%H%M%SZ")
+        file_name = f"emergency_stop_settings_{self.entry.entry_id}_{timestamp}.json"
+        config = _get_entry_config(self.entry)
+        settings = {key: value for key, value in config.items() if key != CONF_RULES}
+        return {
+            "generated_at": now.isoformat(),
+            "file_name": file_name,
+            "version": 1,
+            "settings": settings,
+        }
+
     def _build_simulation_state(self) -> EmergencyStopState:
         now_iso = dt_util.utcnow().isoformat()
         if not self._simulation:
@@ -1681,6 +1750,7 @@ def _build_stop_state(
     rules: list[RuleConfig],
     states: dict[str, RuleRuntimeState],
     acknowledged: bool,
+    previous: EmergencyStopState | None = None,
 ) -> EmergencyStopState:
     active_events: list[dict[str, Any]] = []
     for rule in rules:
@@ -1709,13 +1779,17 @@ def _build_stop_state(
         key=lambda event: (event.get("first_seen") or "", event.get("rule_id") or "")
     )
 
+    now_iso = dt_util.utcnow().isoformat()
     if not active_events:
-        return EmergencyStopState(
+        stop_state = EmergencyStopState(
             active=False,
             level=LEVEL_NORMAL,
             acknowledged=False,
-            last_update=dt_util.utcnow().isoformat(),
+            last_update=now_iso,
         )
+        if previous is not None and _stop_states_equal(previous, stop_state):
+            stop_state.last_update = previous.last_update
+        return stop_state
 
     def primary_sort_key(event: dict[str, Any]) -> tuple[int, str, str]:
         rank = _LEVEL_RANK.get(event.get("level", ""), 0)
@@ -1725,8 +1799,7 @@ def _build_stop_state(
 
     primary = min(active_events, key=primary_sort_key)
     level = _highest_level([event.get("level", "") for event in active_events])
-    now_iso = dt_util.utcnow().isoformat()
-    return EmergencyStopState(
+    stop_state = EmergencyStopState(
         active=True,
         level=level,
         primary_reason=primary.get("reason"),
@@ -1741,6 +1814,29 @@ def _build_stop_state(
         acknowledged=acknowledged,
         last_update=now_iso,
         latched_since=primary.get("first_seen"),
+    )
+    if previous is not None and _stop_states_equal(previous, stop_state):
+        stop_state.last_update = previous.last_update
+    return stop_state
+
+
+def _stop_states_equal(
+    previous: EmergencyStopState, current: EmergencyStopState
+) -> bool:
+    return (
+        previous.active == current.active
+        and previous.level == current.level
+        and previous.primary_reason == current.primary_reason
+        and previous.primary_level == current.primary_level
+        and previous.primary_pack == current.primary_pack
+        and previous.primary_input == current.primary_input
+        and previous.primary_cell == current.primary_cell
+        and previous.primary_sensor_entity == current.primary_sensor_entity
+        and previous.primary_value == current.primary_value
+        and previous.primary_detail == current.primary_detail
+        and previous.active_events == current.active_events
+        and previous.acknowledged == current.acknowledged
+        and previous.latched_since == current.latched_since
     )
 
 

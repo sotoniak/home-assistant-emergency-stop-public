@@ -1,14 +1,23 @@
+import asyncio
 import json
+from types import SimpleNamespace
 import pytest
 
 import voluptuous as vol
 
+import custom_components.emergency_stop.config_flow as config_flow_module
 from custom_components.emergency_stop.config_flow import (
+    EmergencyStopConfigFlow,
     _build_rule_config,
     _binary_rule_count_simple_schema,
     _binary_rule_state_schema,
+    _options_menu_options,
     _numeric_rule_simple_schema,
+    _parse_settings_import_payload,
     _semafor_rule_schema,
+    _rules_action_options,
+    _settings_action_options,
+    _settings_from_config,
     _store_rule,
     _text_rule_schema,
     _validate_globals,
@@ -16,12 +25,16 @@ from custom_components.emergency_stop.config_flow import (
     _parse_import_payload,
     _normalize_import_rules,
     _find_rule_id_conflicts,
+    _setup_action_options,
 )
 from custom_components.emergency_stop.const import (
     CONF_EMAIL_LEVELS,
+    CONF_IMPORT_RULES_JSON,
+    CONF_IMPORT_SETTINGS_JSON,
     CONF_REPORT_RETENTION_MAX_AGE_DAYS,
     CONF_REPORT_RETENTION_MAX_FILES,
     CONF_REPORT_MODE,
+    CONF_BREVO_API_KEY,
     CONF_RULES,
     CONF_RULE_ID,
     CONF_RULE_NAME,
@@ -197,6 +210,146 @@ def test_parse_import_payload_accepts_wrapped_rules():
     rules, error = _parse_import_payload(payload)
     assert error is None
     assert rules[0][CONF_RULE_ID] == "rule_1"
+
+
+def test_parse_settings_import_payload_accepts_wrapped_settings():
+    payload = json.dumps(
+        {
+            "settings": {
+                CONF_REPORT_MODE: REPORT_MODE_BASIC,
+                CONF_BREVO_API_KEY: "secret",
+            }
+        }
+    )
+    settings, error = _parse_settings_import_payload(payload)
+    assert error is None
+    assert settings[CONF_REPORT_MODE] == REPORT_MODE_BASIC
+    assert settings[CONF_BREVO_API_KEY] == "secret"
+
+
+def test_parse_settings_import_payload_rejects_non_object():
+    settings, error = _parse_settings_import_payload(json.dumps([1, 2, 3]))
+    assert settings is None
+    assert error == "import_invalid_settings"
+
+
+def test_settings_from_config_excludes_rules():
+    settings = _settings_from_config(
+        {
+            CONF_REPORT_MODE: REPORT_MODE_BASIC,
+            CONF_RULES: [{"rule_id": "rule_1"}],
+            CONF_BREVO_API_KEY: "secret",
+        }
+    )
+    assert settings[CONF_REPORT_MODE] == REPORT_MODE_BASIC
+    assert settings[CONF_BREVO_API_KEY] == "secret"
+    assert CONF_RULES not in settings
+
+
+def test_options_menu_contains_settings_and_rules_actions():
+    values = {option["value"] for option in _options_menu_options()}
+    assert {"settings", "rules"} <= values
+
+
+def test_settings_action_menu_contains_edit_import_export():
+    values = {option["value"] for option in _settings_action_options()}
+    assert {"edit", "import", "export", "back"} <= values
+
+
+def test_setup_action_menu_contains_manual_and_import():
+    values = {option["value"] for option in _setup_action_options()}
+    assert {"manual", "import"} <= values
+
+
+def test_rules_action_menu_contains_back_and_not_finish():
+    values = {option["value"] for option in _rules_action_options()}
+    assert "back" in values
+    assert "finish" not in values
+
+
+def test_config_flow_starts_with_setup_step():
+    flow = EmergencyStopConfigFlow()
+
+    result = asyncio.run(flow.async_step_user())
+
+    assert result["step_id"] == "setup"
+
+
+def test_config_flow_manual_setup_starts_with_settings_then_rules(monkeypatch):
+    flow = EmergencyStopConfigFlow()
+
+    async def _fake_rule_step(user_input=None):
+        return {"type": "form", "step_id": "rule"}
+
+    monkeypatch.setattr(flow, "async_step_rule", _fake_rule_step)
+
+    result = asyncio.run(
+        flow.async_step_settings({CONF_REPORT_MODE: REPORT_MODE_BASIC})
+    )
+
+    assert result["step_id"] == "rule"
+    assert flow._global_config[CONF_REPORT_MODE] == REPORT_MODE_BASIC
+
+
+def test_config_flow_setup_import_creates_entry(monkeypatch, tmp_path):
+    flow = EmergencyStopConfigFlow()
+    monkeypatch.setattr(config_flow_module, "IMPORT_CONFIG_DIR", tmp_path)
+
+    async def _async_add_executor_job(func, *args):
+        return func(*args)
+
+    flow.hass = SimpleNamespace(async_add_executor_job=_async_add_executor_job)
+
+    async def _fake_set_unique_id(_value):
+        return None
+
+    monkeypatch.setattr(flow, "async_set_unique_id", _fake_set_unique_id)
+    monkeypatch.setattr(flow, "_abort_if_unique_id_configured", lambda: None)
+
+    settings_payload = json.dumps(
+        {
+            "settings": {
+                CONF_REPORT_MODE: REPORT_MODE_BASIC,
+            }
+        }
+    )
+    rules_payload = json.dumps(
+        [
+            {
+                CONF_RULE_ID: "imported_rule",
+                CONF_RULE_NAME: "Imported Rule",
+                CONF_RULE_DATA_TYPE: DATA_TYPE_NUMERIC,
+                CONF_RULE_ENTITIES: ["sensor.imported"],
+                CONF_RULE_AGGREGATE: NUMERIC_AGGREGATES[0],
+                CONF_RULE_CONDITION: COND_GT,
+                CONF_RULE_THRESHOLDS: [3.5],
+                CONF_RULE_DURATION: 5,
+                CONF_RULE_INTERVAL: 1,
+                CONF_RULE_LEVEL: "notify",
+                CONF_RULE_LATCHED: True,
+                CONF_RULE_UNKNOWN_HANDLING: "ignore",
+                CONF_RULE_SEVERITY_MODE: SEVERITY_MODE_SIMPLE,
+            }
+        ]
+    )
+
+    (tmp_path / "settings.json").write_text(settings_payload, encoding="utf-8")
+    (tmp_path / "rules.json").write_text(rules_payload, encoding="utf-8")
+
+    result = asyncio.run(
+        flow.async_step_setup_import(
+            {
+                CONF_IMPORT_SETTINGS_JSON: "settings.json",
+                CONF_IMPORT_RULES_JSON: "rules.json",
+            }
+        )
+    )
+
+    assert result["type"] == "create_entry"
+    assert result["data"][CONF_REPORT_MODE] == REPORT_MODE_BASIC
+    assert [rule[CONF_RULE_ID] for rule in result["data"][CONF_RULES]] == [
+        "imported_rule"
+    ]
 
 
 def test_normalize_import_rules_detects_duplicates():

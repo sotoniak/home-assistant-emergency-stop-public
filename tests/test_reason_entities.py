@@ -19,17 +19,7 @@ class DummyCoordinator:
         return lambda: None
 
 
-def test_rule_binary_sensor_attributes(monkeypatch):
-    monkeypatch.setattr(
-        "custom_components.emergency_stop.binary_sensor.time.monotonic",
-        lambda: 105.0,
-    )
-    monkeypatch.setattr(
-        "custom_components.emergency_stop.binary_sensor.dt_util.utcnow",
-        lambda: __import__("datetime").datetime(
-            2026, 2, 2, 10, 0, 5, tzinfo=__import__("datetime").timezone.utc
-        ),
-    )
+def test_rule_binary_sensor_attributes():
     rule = RuleConfig(
         rule_id="temp_rule",
         name="Temperature Rule",
@@ -73,9 +63,9 @@ def test_rule_binary_sensor_attributes(monkeypatch):
     assert attrs["rule_name"] == "Temperature Rule"
     assert attrs["last_aggregate"] == 61.2
     assert attrs["active_since"] == "2026-02-02T10:00:00+00:00"
-    assert attrs["active_for_seconds"] == 5.0
-    assert attrs["violation_for_seconds"] == 15.0
-    assert attrs["next_evaluation_in_seconds"] == 5.0
+    assert "active_for_seconds" not in attrs
+    assert "violation_for_seconds" not in attrs
+    assert "next_evaluation_in_seconds" not in attrs
     assert attrs["evaluation"]["match"] is True
 
 

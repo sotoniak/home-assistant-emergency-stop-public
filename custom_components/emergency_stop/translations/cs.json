@@ -1,6 +1,21 @@
 {
   "config": {
     "step": {
+      "setup": {
+        "title": "Emergency Stop",
+        "description": "Vyberte režim počátečního nastavení.",
+        "data": {
+          "setup_action": "Režim nastavení"
+        }
+      },
+      "setup_import": {
+        "title": "Import nastavení a pravidel",
+        "description": "Zadejte názvy souborů nastavení a pravidel z adresáře {directory}.",
+        "data": {
+          "import_settings_json": "Název souboru nastavení (.json)",
+          "import_rules_json": "Název souboru pravidel (.json)"
+        }
+      },
       "user": {
         "title": "Emergency Stop",
         "description": "Nastavte globální reportování a e-mail.",
@@ -190,8 +205,12 @@
       "invalid_import_mode": "Neplatný režim importu",
       "invalid_rule": "Neplatné pravidlo",
       "import_invalid_json": "Neplatný JSON importu",
+      "import_invalid_filename": "Pro import je vyžadován název JSON souboru",
+      "import_file_not_found": "Importovaný soubor nebyl v defaultním adresáři nalezen",
+      "import_file_read_failed": "Importovaný soubor se nepodařilo načíst",
       "import_invalid_rules": "Import musí obsahovat seznam pravidel",
       "import_invalid_rule": "Import obsahuje neplatné pravidlo",
+      "import_invalid_settings": "Import musí obsahovat objekt nastavení",
       "import_rules_required": "Import musí obsahovat alespoň jedno pravidlo",
       "import_duplicate_rule_id": "Import obsahuje duplicitní ID pravidel",
       "import_conflict": "Import koliduje s existujícími ID pravidel",
@@ -202,6 +221,20 @@
   },
   "options": {
     "step": {
+      "menu": {
+        "title": "Možnosti Emergency Stop",
+        "description": "Vyberte, co chcete konfigurovat.",
+        "data": {
+          "menu_action": "Akce"
+        }
+      },
+      "settings_action": {
+        "title": "Nastavení",
+        "description": "Vyberte akci pro nastavení.",
+        "data": {
+          "settings_action": "Akce nastavení"
+        }
+      },
       "user": {
         "title": "Možnosti Emergency Stop",
         "description": "Upravit globální reportování a e-mail.",
@@ -243,15 +276,27 @@
       },
       "rule_import": {
         "title": "Import pravidel",
-        "description": "Vložte exportovaný JSON pravidel a zvolte způsob aplikace.",
+        "description": "Zadejte název exportovaného souboru pravidel z {directory} a zvolte způsob aplikace.",
         "data": {
           "import_mode": "Režim importu",
-          "import_rules_json": "JSON pravidel"
+          "import_rules_json": "Název souboru pravidel (.json)"
         }
       },
       "rule_export": {
         "title": "Export pravidel",
         "description": "Pravidla byla exportována do {path}.",
+        "data": {}
+      },
+      "settings_import": {
+        "title": "Import nastavení",
+        "description": "Zadejte název exportovaného souboru nastavení z {directory} (včetně Brevo konfigurace).",
+        "data": {
+          "import_settings_json": "Název souboru nastavení (.json)"
+        }
+      },
+      "settings_export": {
+        "title": "Export nastavení",
+        "description": "Nastavení bylo exportováno do {path}.",
         "data": {}
       },
       "rule": {
@@ -417,8 +462,12 @@
       "invalid_email_levels": "Neplatné úrovně e-mailů",
       "invalid_import_mode": "Neplatný režim importu",
       "import_invalid_json": "Neplatný JSON importu",
+      "import_invalid_filename": "Pro import je vyžadován název JSON souboru",
+      "import_file_not_found": "Importovaný soubor nebyl v defaultním adresáři nalezen",
+      "import_file_read_failed": "Importovaný soubor se nepodařilo načíst",
       "import_invalid_rules": "Import musí obsahovat seznam pravidel",
       "import_invalid_rule": "Import obsahuje neplatné pravidlo",
+      "import_invalid_settings": "Import musí obsahovat objekt nastavení",
       "import_rules_required": "Import musí obsahovat alespoň jedno pravidlo",
       "import_duplicate_rule_id": "Import obsahuje duplicitní ID pravidel",
       "import_conflict": "Import koliduje s existujícími ID pravidel",

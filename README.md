@@ -7,6 +7,9 @@ Emergency Stop is a safety-first rule engine for Home Assistant: define numeric/
 
 ## Features
 - Config Flow UI setup (no YAML required)
+- Options UI with a top-level menu:
+  - `Settings management`
+  - `Rules management`
 - Fully dynamic rules:
   - numeric, binary, or text inputs
   - aggregation (max/min/sum/avg, any/all/count)
@@ -21,6 +24,7 @@ Emergency Stop is a safety-first rule engine for Home Assistant: define numeric/
 - Optional email notification on activation with full JSON report
 - Optional mobile notifications per level (notify/limit/shutdown), including urgent flag
 - Report snapshots with optional extended domains/entities
+- Settings export/import in options (including Brevo configuration)
 - Reset and report button entities
 
 ## Installation (manual / HACS custom repository)
@@ -30,6 +34,9 @@ Emergency Stop is a safety-first rule engine for Home Assistant: define numeric/
 
 ## Configuration
 During setup:
+- Choose setup mode first:
+  - `Custom setup`: continue with manual settings + rule wizard.
+  - `Import settings + rules`: enter `Settings` and `Rules` export file names (`.json`) from `/media/emergency-stop/config`.
 - Configure global reporting + optional email (Brevo)
 - Add one or more **rules**, each with:
   - name and data type (numeric/binary/text)
@@ -44,7 +51,17 @@ During setup:
   - unknown handling
   - per-rule notification toggles (email/mobile)
 - If multiple rules are active, the highest level wins (`shutdown` > `limit` > `notify`)
-- To edit, delete, or import rules later: **Settings → Devices & Services → Emergency Stop → Configure**, then choose **Edit**, **Delete**, or **Import** in the rules step.
+- Options navigation after setup:
+  - **Settings → Devices & Services → Emergency Stop → Configure**
+  - `Settings management`:
+    - `Edit settings`
+    - `Import settings`
+    - `Export settings`
+  - `Rules management`:
+    - `Add`, `Edit`, `Delete`, `Import`, `Export`, `Back`
+  - `Back` in Rules management saves current options and returns to the top menu.
+- Settings import/export includes Brevo fields (including API key). Treat exported settings JSON as sensitive.
+- Import in setup/options uses file names from `/media/emergency-stop/config` (same directory as exports).
 - Global settings are grouped into sections: Report, Email provider (Brevo), Email routing by level, Mobile notifications.
 - Optionally configure email notifications:
   - Brevo: enter API key, sender email, and recipient email
@@ -120,12 +137,25 @@ Semafor mode example:
 - `emergency_stop.simulate_level`: Simulates a level (notify/limit/shutdown/normal) for testing.
 - `emergency_stop.clear_simulation`: Clears an active simulation.
 
+Settings export/import is available in the options UI (not as a service):
+- Settings export file: `/media/emergency-stop/config/emergency_stop_settings_<entry_id>_<timestamp>.json`
+
 ### Entities
 - `binary_sensor.emergency_stop_active`
 - `binary_sensor.emergency_stop_<rule_id>` (one per rule)
 - `sensor.emergency_stop_level` (returns `normal` when no violations are active)
 - `button.emergency_stop_reset`
 - `button.emergency_stop_report`
+
+### Rule Runtime Attributes (per-rule binary sensor)
+On `binary_sensor.emergency_stop_<rule_id>`, runtime attributes describe the latest evaluation snapshot:
+- `last_aggregate` and `evaluation.aggregate`: latest aggregated value for the rule.
+- For numeric rules with `aggregate: max`, this is the current highest value across selected entities.
+- `last_entity` and `evaluation.entity_id`: entity that produced the aggregate value (for `max`/`min`).
+- `last_match` and `evaluation.match`:
+  - `simple` mode: boolean (`true`/`false`).
+  - `semafor` mode: `null` by design, because each level is evaluated independently.
+- `last_invalid_reason` and `evaluation.invalid_reason`: why evaluation was invalid (`unknown`, `no_valid_values`, etc.); `null` means valid evaluation.
 
 ### Mobile notifications (optional)
 Configure in UI (options):
@@ -140,10 +170,10 @@ Behavior:
 - Downgrade sends to **new level** targets and **previous level** targets.
 - Report button sends a **TEST** notification to all configured targets.
 
-## Documentation
+## Context recovery
+- Original specification: `docs/original_prompt.md`
+- Session notes / change log: `docs/SESSION_NOTES.md`
 - Quick workflow: `docs/PLAYBOOK.md`
-- Integration overview (EN): `docs/INTEGRATION_OVERVIEW.en.md`
-- Integration overview (CS): `docs/INTEGRATION_OVERVIEW.cs.md`
 
 ## Example automation
 ```yaml

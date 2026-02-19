@@ -2,14 +2,12 @@
 from __future__ import annotations
 
 from typing import Any
-import time
 
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN, NAME
 from .coordinator import EmergencyStopCoordinator, RuleConfig
@@ -79,10 +77,6 @@ class EmergencyStopRuleBinarySensor(
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         state = self.coordinator.rule_states.get(self._rule.rule_id)
-        now = dt_util.utcnow()
-        active_for_seconds: float | None = None
-        violation_for_seconds: float | None = None
-        next_evaluation_in_seconds: float | None = None
         evaluation: dict[str, Any] = {
             "evaluated_at": None,
             "aggregate": None,
@@ -92,28 +86,6 @@ class EmergencyStopRuleBinarySensor(
             "invalid_reason": None,
         }
         if state is not None:
-            if state.active_since:
-                active_since = dt_util.parse_datetime(state.active_since)
-                if active_since:
-                    active_for_seconds = max(
-                        0.0, (now - active_since).total_seconds()
-                    )
-            violation_started_at = None
-            if state.current_level and state.level_violation_started_at:
-                violation_started_at = state.level_violation_started_at.get(
-                    state.current_level
-                )
-            if violation_started_at is None:
-                violation_started_at = state.violation_started_at
-            if violation_started_at is not None:
-                violation_for_seconds = max(
-                    0.0, time.monotonic() - violation_started_at
-                )
-            if state.last_eval_monotonic is not None:
-                elapsed = time.monotonic() - state.last_eval_monotonic
-                next_evaluation_in_seconds = max(
-                    0.0, self._rule.interval_seconds - elapsed
-                )
             evaluation = {
                 "evaluated_at": state.last_update,
                 "aggregate": state.last_aggregate,
@@ -152,8 +124,5 @@ class EmergencyStopRuleBinarySensor(
             "current_level": state.current_level if state else None,
             "latched_level": state.latched_level if state else None,
             "active_levels": list(state.active_levels) if state else [],
-            "active_for_seconds": active_for_seconds,
-            "violation_for_seconds": violation_for_seconds,
-            "next_evaluation_in_seconds": next_evaluation_in_seconds,
             "evaluation": evaluation,
         }

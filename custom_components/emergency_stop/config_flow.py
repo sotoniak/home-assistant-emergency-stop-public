@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 import json
+from pathlib import Path
 
 import voluptuous as vol
 
@@ -11,6 +12,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import selector
 from homeassistant.util import slugify
 
+from .version import async_get_version_label
 from .const import (
     CONF_BREVO_API_KEY,
     CONF_BREVO_RECIPIENT,
@@ -63,6 +65,7 @@ from .const import (
     CONF_RULE_THRESHOLDS,
     CONF_IMPORT_MODE,
     CONF_IMPORT_RULES_JSON,
+    CONF_IMPORT_SETTINGS_JSON,
     IMPORT_MODE_MERGE,
     IMPORT_MODE_OPTIONS,
     IMPORT_MODE_REPLACE,
@@ -110,10 +113,33 @@ from .const import (
 )
 
 _SECTION_PREFIX = "section_"
+_INFO_PREFIX = "info_"
+IMPORT_CONFIG_DIR = Path("/media/emergency-stop/config")
 _SECTION_SELECTOR = getattr(selector, "SectionSelector", None)
 _SECTION_SELECTOR_CONFIG = getattr(selector, "SectionSelectorConfig", None)
 _CONSTANT_SELECTOR = getattr(selector, "ConstantSelector", None)
 _CONSTANT_SELECTOR_CONFIG = getattr(selector, "ConstantSelectorConfig", None)
+_SETTINGS_KEYS = (
+    CONF_REPORT_MODE,
+    CONF_REPORT_DOMAINS,
+    CONF_REPORT_ENTITY_IDS,
+    CONF_REPORT_RETENTION_MAX_FILES,
+    CONF_REPORT_RETENTION_MAX_AGE_DAYS,
+    CONF_BREVO_API_KEY,
+    CONF_BREVO_SENDER,
+    CONF_BREVO_RECIPIENT,
+    CONF_EMAIL_LEVELS,
+    CONF_BREVO_RECIPIENT_NOTIFY,
+    CONF_BREVO_RECIPIENT_LIMIT,
+    CONF_BREVO_RECIPIENT_SHUTDOWN,
+    CONF_MOBILE_NOTIFY_ENABLED,
+    CONF_MOBILE_NOTIFY_TARGETS_NOTIFY,
+    CONF_MOBILE_NOTIFY_TARGETS_LIMIT,
+    CONF_MOBILE_NOTIFY_TARGETS_SHUTDOWN,
+    CONF_MOBILE_NOTIFY_URGENT_NOTIFY,
+    CONF_MOBILE_NOTIFY_URGENT_LIMIT,
+    CONF_MOBILE_NOTIFY_URGENT_SHUTDOWN,
+)
 
 
 def _section_label(text: str) -> dict[vol.Optional, Any]:
@@ -137,6 +163,20 @@ def _section_label(text: str) -> dict[vol.Optional, Any]:
         return {}
 
 
+def _info_label(key: str, label: str, value: str | None) -> dict[vol.Optional, Any]:
+    if not value:
+        return {}
+    if not _CONSTANT_SELECTOR or not _CONSTANT_SELECTOR_CONFIG:
+        return {}
+    info_key = f"{_INFO_PREFIX}{slugify(key)}"
+    display = f"{label}: {value}"
+    return {
+        vol.Optional(info_key, default=""): _CONSTANT_SELECTOR(
+            _CONSTANT_SELECTOR_CONFIG(label=display, value="")
+        )
+    }
+
+
 class EmergencyStopConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Emergency Stop."""
 
@@ -147,8 +187,94 @@ class EmergencyStopConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._rules: list[dict[str, Any]] = []
         self._rule_context: dict[str, Any] = {}
         self._edit_index: int | None = None
+        self._version_label: str | None = None
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None):
+        """Start setup with action selection."""
+        return await self.async_step_setup(user_input)
+
+    async def async_step_setup(self, user_input: dict[str, Any] | None = None):
+        """Choose setup mode for clean installation."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            action = user_input.get("setup_action")
+            if action == "manual":
+                return await self.async_step_settings()
+            if action == "import":
+                return await self.async_step_setup_import()
+            errors["setup_action"] = "required"
+
+        schema = vol.Schema(
+            {
+                vol.Required("setup_action"): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=_setup_action_options(),
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                )
+            }
+        )
+        return self.async_show_form(step_id="setup", data_schema=schema, errors=errors)
+
+    async def async_step_setup_import(
+        self, user_input: dict[str, Any] | None = None
+    ):
+        """Import settings and rules for clean install bootstrap."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            settings_payload, error = await _load_import_file_payload(
+                self.hass, user_input.get(CONF_IMPORT_SETTINGS_JSON)
+            )
+            if error:
+                errors["base"] = error
+            rules_payload = None
+            if not errors:
+                rules_payload, error = await _load_import_file_payload(
+                    self.hass, user_input.get(CONF_IMPORT_RULES_JSON)
+                )
+                if error:
+                    errors["base"] = error
+            if errors:
+                return self.async_show_form(
+                    step_id="setup_import",
+                    data_schema=_setup_import_schema(),
+                    errors=errors,
+                    description_placeholders={
+                        "directory": str(IMPORT_CONFIG_DIR),
+                    },
+                )
+            settings, error = _parse_settings_import_payload(settings_payload)
+            if error:
+                errors["base"] = error
+            else:
+                cleaned = _clean_email_config(settings)
+                errors = _validate_globals(cleaned)
+                if not errors:
+                    rules, error = _parse_import_payload(rules_payload)
+                    if error:
+                        errors["base"] = error
+                    else:
+                        normalized, error = _normalize_import_rules(rules)
+                        if error:
+                            errors["base"] = error
+                        else:
+                            self._global_config = cleaned
+                            self._rules = normalized
+                            await self.async_set_unique_id(DOMAIN)
+                            self._abort_if_unique_id_configured()
+                            data = {**self._global_config, CONF_RULES: list(self._rules)}
+                            return self.async_create_entry(title=NAME, data=data)
+
+        return self.async_show_form(
+            step_id="setup_import",
+            data_schema=_setup_import_schema(),
+            errors=errors,
+            description_placeholders={
+                "directory": str(IMPORT_CONFIG_DIR),
+            },
+        )
+
+    async def async_step_settings(self, user_input: dict[str, Any] | None = None):
         """Handle global settings."""
         errors: dict[str, str] = {}
 
@@ -160,7 +286,9 @@ class EmergencyStopConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 self._rules = []
                 return await self.async_step_rule()
 
-        schema = _global_schema(self.hass)
+        if self._version_label is None:
+            self._version_label = await async_get_version_label(self.hass)
+        schema = _global_schema(self.hass, version_label=self._version_label)
         return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
 
     async def async_step_rule(self, user_input: dict[str, Any] | None = None):
@@ -450,7 +578,7 @@ class EmergencyStopConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_import(self, user_input: dict[str, Any]):
         """Handle import flow."""
-        return await self.async_step_user(user_input)
+        return await self.async_step_settings(user_input)
 
     @staticmethod
     def async_get_options_flow(config_entry: config_entries.ConfigEntry):
@@ -464,33 +592,123 @@ class EmergencyStopOptionsFlow(config_entries.OptionsFlow):
         self._entry = entry
         self._global_config: dict[str, Any] = {}
         self._rules: list[dict[str, Any]] = []
+        self._global_config_loaded = False
+        self._rules_loaded = False
         self._rule_context: dict[str, Any] = {}
         self._edit_index: int | None = None
         self._rules_action: str | None = None
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None):
-        return await self.async_step_user(user_input)
+        return await self.async_step_menu(user_input)
+
+    def _current_config(self) -> dict[str, Any]:
+        return {**self._entry.data, **self._entry.options}
+
+    def _seed_options_state(self) -> None:
+        current = self._current_config()
+        if not self._global_config_loaded:
+            self._global_config = _settings_from_config(current)
+            self._global_config_loaded = True
+        if not self._rules_loaded:
+            self._rules = [dict(rule) for rule in current.get(CONF_RULES, []) or []]
+            self._rules_loaded = True
+
+    def _build_options_payload(self) -> dict[str, Any]:
+        self._seed_options_state()
+        return {**self._global_config, CONF_RULES: list(self._rules)}
+
+    def _save_options(self) -> None:
+        self.hass.config_entries.async_update_entry(
+            self._entry,
+            options=self._build_options_payload(),
+        )
+
+    def _save_rules_changes(self) -> None:
+        """Persist rule mutations immediately to avoid losing changes."""
+        self._rules_loaded = True
+        self._save_options()
+
+    async def async_step_menu(self, user_input: dict[str, Any] | None = None):
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            action = user_input.get("menu_action")
+            if action == "settings":
+                self._seed_options_state()
+                return await self.async_step_settings_action()
+            if action == "rules":
+                self._seed_options_state()
+                return await self.async_step_rules_action()
+            errors["menu_action"] = "required"
+
+        schema = vol.Schema(
+            {
+                vol.Required("menu_action"): selector.SelectSelector(
+                    selector.SelectSelectorConfig(options=_options_menu_options())
+                )
+            }
+        )
+        return self.async_show_form(step_id="menu", data_schema=schema, errors=errors)
+
+    async def async_step_settings_action(
+        self, user_input: dict[str, Any] | None = None
+    ):
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            action = user_input.get("settings_action")
+            if action == "edit":
+                return await self.async_step_user()
+            if action == "import":
+                return await self.async_step_settings_import()
+            if action == "export":
+                return await self.async_step_settings_export()
+            if action == "back":
+                return await self.async_step_menu()
+            errors["settings_action"] = "required"
+
+        schema = vol.Schema(
+            {
+                vol.Required("settings_action"): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=_settings_action_options(),
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                )
+            }
+        )
+        return self.async_show_form(
+            step_id="settings_action",
+            data_schema=schema,
+            errors=errors,
+        )
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None):
         errors: dict[str, str] = {}
-        current = {**self._entry.data, **self._entry.options}
+        current = self._current_config()
 
         if user_input is not None:
             user_input = _clean_email_config(user_input)
             errors = _validate_globals(user_input)
             if not errors:
                 self._global_config = user_input
-                self._rules = [
-                    dict(rule) for rule in current.get(CONF_RULES, []) or []
-                ]
-                return await self.async_step_rules_action()
+                self._global_config_loaded = True
+                if not self._rules_loaded:
+                    self._rules = [dict(rule) for rule in current.get(CONF_RULES, []) or []]
+                    self._rules_loaded = True
+                self._save_options()
+                return await self.async_step_menu()
 
-        schema = _global_schema(self.hass, current)
+        version_label = await async_get_version_label(self.hass)
+        schema = _global_schema(
+            self.hass,
+            self._global_config or _settings_from_config(current),
+            version_label=version_label,
+        )
         return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
 
     async def async_step_rules_action(
         self, user_input: dict[str, Any] | None = None
     ):
+        self._seed_options_state()
         errors: dict[str, str] = {}
         if user_input is not None:
             action = user_input.get("rules_action")
@@ -508,9 +726,9 @@ class EmergencyStopOptionsFlow(config_entries.OptionsFlow):
                 return await self.async_step_rule_import()
             if action == "export":
                 return await self.async_step_rule_export()
-            if action == "finish":
-                data = {**self._global_config, CONF_RULES: list(self._rules)}
-                return self.async_create_entry(title=NAME, data=data)
+            if action == "back":
+                self._save_options()
+                return await self.async_step_menu()
 
         schema = vol.Schema(
             {
@@ -523,6 +741,73 @@ class EmergencyStopOptionsFlow(config_entries.OptionsFlow):
             step_id="rules_action",
             data_schema=schema,
             errors=errors,
+        )
+
+    async def async_step_settings_export(
+        self, user_input: dict[str, Any] | None = None
+    ):
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            return await self.async_step_settings_action()
+
+        export_path = None
+        try:
+            coordinator = self.hass.data[DOMAIN][self._entry.entry_id]
+            export_path = await coordinator.async_export_settings()
+        except Exception:
+            errors["base"] = "export_failed"
+
+        return self.async_show_form(
+            step_id="settings_export",
+            data_schema=vol.Schema({}),
+            errors=errors,
+            description_placeholders={
+                "path": str(export_path) if export_path else "",
+            },
+        )
+
+    async def async_step_settings_import(
+        self, user_input: dict[str, Any] | None = None
+    ):
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            payload, error = await _load_import_file_payload(
+                self.hass, user_input.get(CONF_IMPORT_SETTINGS_JSON)
+            )
+            if error:
+                errors["base"] = error
+                return self.async_show_form(
+                    step_id="settings_import",
+                    data_schema=_settings_import_schema(),
+                    errors=errors,
+                    description_placeholders={
+                        "directory": str(IMPORT_CONFIG_DIR),
+                    },
+                )
+            settings, error = _parse_settings_import_payload(payload)
+            if error:
+                errors["base"] = error
+            else:
+                cleaned = _clean_email_config(settings)
+                errors = _validate_globals(cleaned)
+                if not errors:
+                    self._global_config = cleaned
+                    self._global_config_loaded = True
+                    self._rules = [
+                        dict(rule)
+                        for rule in self._current_config().get(CONF_RULES, []) or []
+                    ]
+                    self._rules_loaded = True
+                    self._save_options()
+                    return await self.async_step_menu()
+
+        return self.async_show_form(
+            step_id="settings_import",
+            data_schema=_settings_import_schema(),
+            errors=errors,
+            description_placeholders={
+                "directory": str(IMPORT_CONFIG_DIR),
+            },
         )
 
     async def async_step_rule_export(
@@ -559,6 +844,7 @@ class EmergencyStopOptionsFlow(config_entries.OptionsFlow):
             elif self._rules_action == "delete":
                 self._rules.pop(index)
                 self._rules_action = None
+                self._save_rules_changes()
                 return await self.async_step_rules_action()
             elif self._rules_action == "edit":
                 self._edit_index = index
@@ -581,7 +867,19 @@ class EmergencyStopOptionsFlow(config_entries.OptionsFlow):
         errors: dict[str, str] = {}
         if user_input is not None:
             mode = user_input.get(CONF_IMPORT_MODE, IMPORT_MODE_MERGE)
-            payload = user_input.get(CONF_IMPORT_RULES_JSON)
+            payload, error = await _load_import_file_payload(
+                self.hass, user_input.get(CONF_IMPORT_RULES_JSON)
+            )
+            if error:
+                errors["base"] = error
+                return self.async_show_form(
+                    step_id="rule_import",
+                    data_schema=_rule_import_schema(),
+                    errors=errors,
+                    description_placeholders={
+                        "directory": str(IMPORT_CONFIG_DIR),
+                    },
+                )
             rules, error = _parse_import_payload(payload)
             if error:
                 errors["base"] = error
@@ -600,6 +898,7 @@ class EmergencyStopOptionsFlow(config_entries.OptionsFlow):
                             self._rules = normalized
                         else:
                             self._rules.extend(normalized)
+                        self._save_rules_changes()
                         return await self.async_step_rules_action()
 
         schema = _rule_import_schema()
@@ -607,6 +906,9 @@ class EmergencyStopOptionsFlow(config_entries.OptionsFlow):
             step_id="rule_import",
             data_schema=schema,
             errors=errors,
+            description_placeholders={
+                "directory": str(IMPORT_CONFIG_DIR),
+            },
         )
     async def async_step_rule(self, user_input: dict[str, Any] | None = None):
         errors: dict[str, str] = {}
@@ -678,6 +980,7 @@ class EmergencyStopOptionsFlow(config_entries.OptionsFlow):
                 existing_rules = _rules_excluding_index(self._rules, self._edit_index)
                 rule = _build_rule_config(merged, {}, existing_rules)
                 _store_rule(self._rules, rule, self._edit_index)
+                self._save_rules_changes()
                 if self._edit_index is not None:
                     self._edit_index = None
                     return await self.async_step_rules_action()
@@ -702,6 +1005,7 @@ class EmergencyStopOptionsFlow(config_entries.OptionsFlow):
                 existing_rules = _rules_excluding_index(self._rules, self._edit_index)
                 rule = _build_rule_config(merged, {}, existing_rules)
                 _store_rule(self._rules, rule, self._edit_index)
+                self._save_rules_changes()
                 if self._edit_index is not None:
                     self._edit_index = None
                     return await self.async_step_rules_action()
@@ -755,6 +1059,7 @@ class EmergencyStopOptionsFlow(config_entries.OptionsFlow):
                 existing_rules = _rules_excluding_index(self._rules, self._edit_index)
                 rule = _build_rule_config(merged, {}, existing_rules)
                 _store_rule(self._rules, rule, self._edit_index)
+                self._save_rules_changes()
                 if self._edit_index is not None:
                     self._edit_index = None
                     return await self.async_step_rules_action()
@@ -805,6 +1110,7 @@ class EmergencyStopOptionsFlow(config_entries.OptionsFlow):
                 existing_rules = _rules_excluding_index(self._rules, self._edit_index)
                 rule = _build_rule_config(merged, {}, existing_rules)
                 _store_rule(self._rules, rule, self._edit_index)
+                self._save_rules_changes()
                 if self._edit_index is not None:
                     self._edit_index = None
                     return await self.async_step_rules_action()
@@ -830,6 +1136,7 @@ class EmergencyStopOptionsFlow(config_entries.OptionsFlow):
                 existing_rules = _rules_excluding_index(self._rules, self._edit_index)
                 rule = _build_rule_config(merged, {}, existing_rules)
                 _store_rule(self._rules, rule, self._edit_index)
+                self._save_rules_changes()
                 if self._edit_index is not None:
                     self._edit_index = None
                     return await self.async_step_rules_action()
@@ -870,6 +1177,7 @@ class EmergencyStopOptionsFlow(config_entries.OptionsFlow):
                 existing_rules = _rules_excluding_index(self._rules, self._edit_index)
                 rule = _build_rule_config(self._rule_context, merged, existing_rules)
                 _store_rule(self._rules, rule, self._edit_index)
+                self._save_rules_changes()
                 if self._edit_index is not None:
                     self._edit_index = None
                     return await self.async_step_rules_action()
@@ -892,8 +1200,7 @@ class EmergencyStopOptionsFlow(config_entries.OptionsFlow):
             if not self._rules:
                 errors["base"] = "rules_required"
             else:
-                data = {**self._global_config, CONF_RULES: list(self._rules)}
-                return self.async_create_entry(title=NAME, data=data)
+                return await self.async_step_rules_action()
 
         schema = vol.Schema(
             {
@@ -908,7 +1215,9 @@ class EmergencyStopOptionsFlow(config_entries.OptionsFlow):
 
 
 def _global_schema(
-    hass: HomeAssistant, defaults: dict[str, Any] | None = None
+    hass: HomeAssistant,
+    defaults: dict[str, Any] | None = None,
+    version_label: str | None = None,
 ) -> vol.Schema:
     defaults = defaults or {}
     domain_options = _domain_options(hass)
@@ -1061,6 +1370,7 @@ def _global_schema(
             ): selector.BooleanSelector(),
         }
     )
+    schema_fields.update(_info_label("version", "Integration version", version_label))
     return vol.Schema(schema_fields)
 
 
@@ -1709,7 +2019,42 @@ def _rules_action_options() -> list[selector.SelectOptionDict]:
         "delete": "Delete existing rule",
         "import": "Import rules",
         "export": "Export rules",
-        "finish": "Finish",
+        "back": "Back",
+    }
+    return [
+        selector.SelectOptionDict(value=value, label=label)
+        for value, label in options.items()
+    ]
+
+
+def _options_menu_options() -> list[selector.SelectOptionDict]:
+    options = {
+        "settings": "Settings management",
+        "rules": "Rules management",
+    }
+    return [
+        selector.SelectOptionDict(value=value, label=label)
+        for value, label in options.items()
+    ]
+
+
+def _settings_action_options() -> list[selector.SelectOptionDict]:
+    options = {
+        "edit": "Edit settings",
+        "import": "Import settings",
+        "export": "Export settings",
+        "back": "Back",
+    }
+    return [
+        selector.SelectOptionDict(value=value, label=label)
+        for value, label in options.items()
+    ]
+
+
+def _setup_action_options() -> list[selector.SelectOptionDict]:
+    options = {
+        "manual": "Custom setup",
+        "import": "Import settings + rules",
     }
     return [
         selector.SelectOptionDict(value=value, label=label)
@@ -1747,7 +2092,30 @@ def _rule_import_schema() -> vol.Schema:
                 selector.SelectSelectorConfig(options=_import_mode_options())
             ),
             vol.Required(CONF_IMPORT_RULES_JSON): selector.TextSelector(
-                selector.TextSelectorConfig(multiline=True)
+                selector.TextSelectorConfig()
+            ),
+        }
+    )
+
+
+def _settings_import_schema() -> vol.Schema:
+    return vol.Schema(
+        {
+            vol.Required(CONF_IMPORT_SETTINGS_JSON): selector.TextSelector(
+                selector.TextSelectorConfig()
+            )
+        }
+    )
+
+
+def _setup_import_schema() -> vol.Schema:
+    return vol.Schema(
+        {
+            vol.Required(CONF_IMPORT_SETTINGS_JSON): selector.TextSelector(
+                selector.TextSelectorConfig()
+            ),
+            vol.Required(CONF_IMPORT_RULES_JSON): selector.TextSelector(
+                selector.TextSelectorConfig()
             ),
         }
     )
@@ -1776,6 +2144,35 @@ def _rule_index_for_id(rules: list[dict[str, Any]], rule_id: str | None) -> int 
     return None
 
 
+async def _load_import_file_payload(
+    hass: HomeAssistant, file_name_raw: Any
+) -> tuple[str | None, str | None]:
+    file_name = _normalize_optional_str(file_name_raw)
+    if not file_name:
+        return None, "import_invalid_filename"
+
+    candidate = Path(file_name)
+    if candidate.name != file_name:
+        return None, "import_invalid_filename"
+    if candidate.suffix.lower() != ".json":
+        return None, "import_invalid_filename"
+
+    import_path = IMPORT_CONFIG_DIR / candidate.name
+    try:
+        content = await hass.async_add_executor_job(_read_import_file, import_path)
+    except FileNotFoundError:
+        return None, "import_file_not_found"
+    except OSError:
+        return None, "import_file_read_failed"
+    return content, None
+
+
+def _read_import_file(path: Path) -> str:
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    return path.read_text(encoding="utf-8")
+
+
 def _parse_import_payload(raw: Any) -> tuple[list[dict[str, Any]] | None, str | None]:
     if raw is None:
         return None, "import_invalid_json"
@@ -1794,6 +2191,31 @@ def _parse_import_payload(raw: Any) -> tuple[list[dict[str, Any]] | None, str | 
     if not rules:
         return None, "import_rules_required"
     return rules, None
+
+
+def _parse_settings_import_payload(
+    raw: Any,
+) -> tuple[dict[str, Any] | None, str | None]:
+    if raw is None:
+        return None, "import_invalid_json"
+    if not isinstance(raw, str):
+        raw = str(raw)
+    if not raw.strip():
+        return None, "import_invalid_json"
+    try:
+        payload = json.loads(raw)
+    except (TypeError, ValueError):
+        return None, "import_invalid_json"
+
+    if not isinstance(payload, dict):
+        return None, "import_invalid_settings"
+    settings_payload = payload.get("settings", payload)
+    if not isinstance(settings_payload, dict):
+        return None, "import_invalid_settings"
+    settings = _settings_from_config(settings_payload)
+    if not settings:
+        return None, "import_invalid_settings"
+    return settings, None
 
 
 def _find_rule_id_conflicts(
@@ -2237,7 +2659,10 @@ def _clean_email_config(data: dict[str, Any]) -> dict[str, Any]:
     cleaned = {
         key: value
         for key, value in data.items()
-        if not (isinstance(key, str) and key.startswith(_SECTION_PREFIX))
+        if not (
+            isinstance(key, str)
+            and (key.startswith(_SECTION_PREFIX) or key.startswith(_INFO_PREFIX))
+        )
     }
     for key in (
         CONF_BREVO_API_KEY,
@@ -2254,3 +2679,12 @@ def _clean_email_config(data: dict[str, Any]) -> dict[str, Any]:
             else:
                 cleaned[key] = value
     return cleaned
+
+
+def _settings_from_config(config: dict[str, Any]) -> dict[str, Any]:
+    settings = {
+        key: config[key]
+        for key in _SETTINGS_KEYS
+        if key in config
+    }
+    return _clean_email_config(settings)

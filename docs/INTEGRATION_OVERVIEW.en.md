@@ -33,6 +33,12 @@ If multiple rules are active, the highest level wins (`shutdown` > `limit` > `no
 - Purpose: a direct trigger for a specific rule.
 - On when: that rule is active.
 - Attributes include the rule config and runtime state (last match/aggregate, timestamps).
+- Runtime interpretation:
+  - `last_aggregate` / `evaluation.aggregate`: latest aggregated value for this rule.
+  - For numeric rules with `aggregate: max`, this is the highest value across configured entities.
+  - `last_entity` / `evaluation.entity_id`: entity that produced the aggregate value (for `max`/`min`).
+  - `last_match` / `evaluation.match`: boolean in `simple` mode; `null` in `semafor` mode by design.
+  - `last_invalid_reason` / `evaluation.invalid_reason`: evaluation problem reason (`unknown`, `no_valid_values`, etc.); `null` means valid inputs.
 
 ### Sensors
 
@@ -61,6 +67,14 @@ The integration registers these services:
 - `emergency_stop.simulate_level`: simulates a level (notify/limit/shutdown/normal) for testing.
 - `emergency_stop.clear_simulation`: clears an active simulation.
 
+Settings export/import is provided via the Options UI (not as a service).
+Settings export file path:
+- `/media/emergency-stop/config/emergency_stop_settings_<entry_id>_<timestamp>.json`
+
+Initial clean installation starts with a setup mode selector:
+- `Custom setup`: manual settings + rule wizard.
+- `Import settings + rules`: enter settings/rules export file names from `/media/emergency-stop/config`.
+
 ## Email Notifications (Optional)
 
 Configure Brevo in options with API key, sender email, and a default recipient email. Select the email levels (notify/limit/shutdown) and optionally set per-level recipients to override the default. Leave the Brevo fields empty to disable email sending.
@@ -82,9 +96,28 @@ Optional report retention settings can keep a maximum number of reports or remov
 
 ## Editing Rules
 
-To edit, delete, or import rules:
+Options navigation:
 - Settings → Devices & Services → Emergency Stop → Configure
-- Select **Edit**, **Delete**, or **Import** in the rules step.
+- Top-level menu:
+  - `Settings management`
+  - `Rules management`
+
+`Settings management` actions:
+- `Edit settings`
+- `Import settings`
+- `Export settings`
+
+`Rules management` actions:
+- `Add`
+- `Edit`
+- `Delete`
+- `Import`
+- `Export`
+- `Back`
+
+`Back` in Rules management saves options and returns to the top-level menu.
+Settings import/export includes Brevo configuration values (including API key), so exported settings JSON should be handled as sensitive.
+Imports use file names from `/media/emergency-stop/config` (same directory as export files).
 
 ## Mobile Notifications (Optional)
 

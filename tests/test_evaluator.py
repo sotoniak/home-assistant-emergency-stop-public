@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 import pytest
 
 from homeassistant.const import STATE_UNKNOWN
@@ -429,3 +430,88 @@ def test_semafor_downgrade_when_value_drops(base_times):
     engine.evaluate(hass)
     state = engine.states[rule.rule_id]
     assert state.current_level == LEVEL_LIMIT
+
+
+def test_rule_runtime_last_update_stable_without_state_change(monkeypatch):
+    monotonic_values = [0.0]
+    now_values = [
+        datetime(2026, 2, 2, 10, 0, 0, tzinfo=timezone.utc),
+        datetime(2026, 2, 2, 10, 0, 1, tzinfo=timezone.utc),
+    ]
+
+    def fake_monotonic():
+        return monotonic_values[-1]
+
+    def fake_utcnow():
+        if len(now_values) > 1:
+            return now_values.pop(0)
+        return now_values[0]
+
+    monkeypatch.setattr(
+        "custom_components.emergency_stop.coordinator.time.monotonic", fake_monotonic
+    )
+    monkeypatch.setattr(
+        "custom_components.emergency_stop.coordinator.dt_util.utcnow", fake_utcnow
+    )
+
+    hass = FakeHass({"sensor.voltage": FakeState("3.0")})
+    rule = _rule(
+        rule_id="stable_update_rule",
+        name="Stable update rule",
+        data_type=DATA_TYPE_NUMERIC,
+        entities=["sensor.voltage"],
+        aggregate="max",
+        condition=COND_GT,
+        thresholds=[3.5],
+        duration=2,
+        interval=1,
+        level=LEVEL_LIMIT,
+        latched=False,
+    )
+    engine = RuleEngine([rule])
+
+    engine.evaluate(hass)
+    first_update = engine.states[rule.rule_id].last_update
+    assert first_update == "2026-02-02T10:00:00+00:00"
+
+    monotonic_values.append(1.0)
+    engine.evaluate(hass)
+    assert engine.states[rule.rule_id].last_update == first_update
+
+
+def test_build_stop_state_keeps_last_update_if_unchanged(monkeypatch):
+    now_values = [
+        datetime(2026, 2, 2, 10, 0, 0, tzinfo=timezone.utc),
+        datetime(2026, 2, 2, 10, 0, 5, tzinfo=timezone.utc),
+    ]
+
+    def fake_utcnow():
+        if len(now_values) > 1:
+            return now_values.pop(0)
+        return now_values[0]
+
+    monkeypatch.setattr(
+        "custom_components.emergency_stop.coordinator.dt_util.utcnow", fake_utcnow
+    )
+
+    rule = _rule(
+        rule_id="stop_state_rule",
+        name="Stop state rule",
+        level=LEVEL_LIMIT,
+        thresholds=[1],
+    )
+    states = {
+        rule.rule_id: RuleRuntimeState(
+            active=True,
+            active_since="2026-02-02T09:59:00+00:00",
+            last_update="2026-02-02T09:59:30+00:00",
+            last_entity="sensor.voltage",
+            last_aggregate=4.0,
+            last_detail="Stop state rule: max=4.000 gt 1",
+        )
+    }
+    first = _build_stop_state([rule], states, acknowledged=False)
+    second = _build_stop_state([rule], states, acknowledged=False, previous=first)
+
+    assert first.last_update == "2026-02-02T10:00:00+00:00"
+    assert second.last_update == first.last_update

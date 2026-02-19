@@ -53,8 +53,10 @@ def test_clean_email_config_strips_per_level_recipients():
 def test_clean_email_config_drops_section_keys():
     data = {
         "section_report": "Report",
+        "info_version": "Version",
         CONF_BREVO_RECIPIENT_NOTIFY: "notify@example.com",
     }
     cleaned = _clean_email_config(data)
     assert "section_report" not in cleaned
+    assert "info_version" not in cleaned
     assert cleaned[CONF_BREVO_RECIPIENT_NOTIFY] == "notify@example.com"

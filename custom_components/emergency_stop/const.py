@@ -74,6 +74,7 @@ CONF_SIMULATION_SEND_NOTIFICATIONS = "send_notifications"
 CONF_SIMULATION_SEND_EMAIL = "send_email"
 CONF_IMPORT_MODE = "import_mode"
 CONF_IMPORT_RULES_JSON = "import_rules_json"
+CONF_IMPORT_SETTINGS_JSON = "import_settings_json"
 
 IMPORT_MODE_MERGE = "merge"
 IMPORT_MODE_REPLACE = "replace"
