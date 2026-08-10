@@ -40,6 +40,19 @@ from .const import (
     CONF_RULE_SEVERITY_MODE,
     CONF_RULE_DIRECTION,
     CONF_RULE_LEVELS,
+    CONF_RULE_MAX_AGE,
+    CONF_RULE_MAX_STEP,
+    CONF_RULE_MIN_SOURCES,
+    CONF_RULE_RECOVERY,
+    CONF_RULE_FLAP_WINDOW,
+    CONF_RULE_FLAP_BUDGET,
+    CONF_RULE_VALUE_MAX,
+    CONF_RULE_VALUE_MIN,
+    DEFAULT_RULE_MAX_AGE,
+    DEFAULT_RULE_MIN_SOURCES,
+    DEFAULT_RULE_RECOVERY,
+    DEFAULT_RULE_FLAP_WINDOW,
+    DEFAULT_RULE_FLAP_BUDGET,
     CONF_RULE_TEXT_CASE_SENSITIVE,
     CONF_RULE_TEXT_MATCH,
     CONF_RULE_TEXT_TRIM,
@@ -94,6 +107,7 @@ from .const import (
     DIRECTION_LOWER_IS_WORSE,
     LEVEL_OPTIONS,
     LEVEL_ORDER,
+    LEVEL_SHUTDOWN,
     NAME,
     NUMERIC_AGGREGATES,
     BINARY_AGGREGATES,
@@ -107,6 +121,7 @@ from .const import (
     SEVERITY_MODE_SEMAFOR,
     SEVERITY_MODE_SIMPLE,
     UNKNOWN_HANDLING_OPTIONS,
+    UNKNOWN_TREAT_VIOLATION,
     COND_BETWEEN,
     AGGREGATE_COUNT,
     DOMAIN,
@@ -1402,6 +1417,43 @@ def _rule_notification_schema(
     }
 
 
+def _rule_trust_schema(
+    defaults: dict[str, Any] | None = None, numeric: bool = False
+) -> dict[vol.Optional, Any]:
+    """Input-trust and flap fields shared by every rule form.
+
+    All default to off, so leaving them alone keeps a rule behaving exactly as
+    before. A rule that can reach `shutdown` should fill them in.
+    """
+    fields: dict[Any, Any] = {
+        _required_key(
+            CONF_RULE_MAX_AGE, defaults, fallback=DEFAULT_RULE_MAX_AGE
+        ): vol.Coerce(int),
+        _required_key(
+            CONF_RULE_MIN_SOURCES, defaults, fallback=DEFAULT_RULE_MIN_SOURCES
+        ): vol.Coerce(int),
+        _required_key(
+            CONF_RULE_RECOVERY, defaults, fallback=DEFAULT_RULE_RECOVERY
+        ): vol.Coerce(int),
+        _required_key(
+            CONF_RULE_FLAP_WINDOW, defaults, fallback=DEFAULT_RULE_FLAP_WINDOW
+        ): vol.Coerce(int),
+        _required_key(
+            CONF_RULE_FLAP_BUDGET, defaults, fallback=DEFAULT_RULE_FLAP_BUDGET
+        ): vol.Coerce(int),
+    }
+    if numeric:
+        number = selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                mode=selector.NumberSelectorMode.BOX, step=0.001
+            )
+        )
+        fields[_optional_key(CONF_RULE_VALUE_MIN, defaults)] = number
+        fields[_optional_key(CONF_RULE_VALUE_MAX, defaults)] = number
+        fields[_optional_key(CONF_RULE_MAX_STEP, defaults)] = number
+    return fields
+
+
 def _numeric_rule_select_schema(
     defaults: dict[str, Any] | None = None,
 ) -> vol.Schema:
@@ -1477,6 +1529,7 @@ def _numeric_rule_simple_schema(
             ): selector.SelectSelector(
                 selector.SelectSelectorConfig(options=_unknown_options())
             ),
+            **_rule_trust_schema(defaults, numeric=True),
             **_rule_notification_schema(defaults),
         }
     )
@@ -1535,6 +1588,7 @@ def _binary_rule_state_schema(
             ): selector.SelectSelector(
                 selector.SelectSelectorConfig(options=_unknown_options())
             ),
+            **_rule_trust_schema(defaults),
             **_rule_notification_schema(defaults),
         }
     )
@@ -1608,6 +1662,7 @@ def _binary_rule_count_simple_schema(
             ): selector.SelectSelector(
                 selector.SelectSelectorConfig(options=_unknown_options())
             ),
+            **_rule_trust_schema(defaults),
             **_rule_notification_schema(defaults),
         }
     )
@@ -1651,6 +1706,9 @@ def _semafor_rule_schema(
             ): selector.SelectSelector(
                 selector.SelectSelectorConfig(options=_unknown_options())
             ),
+            # `numeric` is forwarded so a binary-count semafor form does not offer
+            # value bounds that only make sense for a measured quantity.
+            **_rule_trust_schema(defaults, numeric=numeric),
             **_rule_notification_schema(defaults),
         }
     )
@@ -1709,6 +1767,7 @@ def _text_rule_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
                 defaults,
                 fallback=DEFAULT_TEXT_TRIM,
             ): selector.BooleanSelector(),
+            **_rule_trust_schema(defaults),
             **_rule_notification_schema(defaults),
         }
     )
@@ -1762,7 +1821,64 @@ def _validate_rule_common(data: dict[str, Any]) -> dict[str, str]:
     unknown_handling = data.get(CONF_RULE_UNKNOWN_HANDLING)
     if unknown_handling not in UNKNOWN_HANDLING_OPTIONS:
         errors[CONF_RULE_UNKNOWN_HANDLING] = "invalid_unknown"
+    elif unknown_handling == UNKNOWN_TREAT_VIOLATION and level == LEVEL_SHUTDOWN:
+        # Missing inputs mean the layer is degraded, never that the battery is in
+        # trouble - such a rule must not be able to switch the house off.
+        errors[CONF_RULE_UNKNOWN_HANDLING] = "shutdown_treat_violation"
 
+    errors.update(_validate_trust_fields(data))
+    return errors
+
+
+def _validate_trust_fields(data: dict[str, Any]) -> dict[str, str]:
+    errors: dict[str, str] = {}
+    for field in (CONF_RULE_MAX_AGE, CONF_RULE_RECOVERY, CONF_RULE_FLAP_WINDOW,
+                  CONF_RULE_FLAP_BUDGET):
+        raw = data.get(field)
+        if raw is None:
+            continue
+        try:
+            if int(raw) < 0:
+                errors[field] = "min_0"
+        except (TypeError, ValueError):
+            errors[field] = "invalid_number"
+
+    raw_sources = data.get(CONF_RULE_MIN_SOURCES)
+    if raw_sources is not None:
+        try:
+            if int(raw_sources) < 1:
+                errors[CONF_RULE_MIN_SOURCES] = "min_1"
+        except (TypeError, ValueError):
+            errors[CONF_RULE_MIN_SOURCES] = "invalid_number"
+
+    bounds: dict[str, float | None] = {}
+    for field in (CONF_RULE_VALUE_MIN, CONF_RULE_VALUE_MAX, CONF_RULE_MAX_STEP):
+        parsed = _optional_float_or_error(data.get(field))
+        if parsed is _INVALID:
+            errors[field] = "invalid_number"
+            continue
+        bounds[field] = parsed
+    if (
+        bounds.get(CONF_RULE_VALUE_MIN) is not None
+        and bounds.get(CONF_RULE_VALUE_MAX) is not None
+        and bounds[CONF_RULE_VALUE_MIN] > bounds[CONF_RULE_VALUE_MAX]
+    ):
+        errors[CONF_RULE_VALUE_MIN] = "thresholds_order"
+    if bounds.get(CONF_RULE_MAX_STEP) is not None and bounds[CONF_RULE_MAX_STEP] <= 0:
+        errors[CONF_RULE_MAX_STEP] = "min_1"
+
+    window = data.get(CONF_RULE_FLAP_WINDOW)
+    budget = data.get(CONF_RULE_FLAP_BUDGET)
+    try:
+        window_val = int(window or 0)
+        budget_val = int(budget or 0)
+    except (TypeError, ValueError):
+        return errors
+    if bool(window_val) != bool(budget_val):
+        # One without the other cannot express anything.
+        errors[CONF_RULE_FLAP_BUDGET] = "flap_pair_required"
+    elif window_val and budget_val > window_val:
+        errors[CONF_RULE_FLAP_BUDGET] = "flap_budget_too_large"
     return errors
 
 
@@ -1965,6 +2081,27 @@ def _build_rule_config(
         CONF_RULE_NOTIFY_MOBILE: bool(
             merged.get(CONF_RULE_NOTIFY_MOBILE, DEFAULT_RULE_NOTIFY_MOBILE)
         ),
+        CONF_RULE_MAX_AGE: _int_or_default(
+            merged.get(CONF_RULE_MAX_AGE), DEFAULT_RULE_MAX_AGE
+        ),
+        CONF_RULE_MIN_SOURCES: max(
+            1,
+            _int_or_default(
+                merged.get(CONF_RULE_MIN_SOURCES), DEFAULT_RULE_MIN_SOURCES
+            ),
+        ),
+        CONF_RULE_RECOVERY: _int_or_default(
+            merged.get(CONF_RULE_RECOVERY), DEFAULT_RULE_RECOVERY
+        ),
+        CONF_RULE_FLAP_WINDOW: _int_or_default(
+            merged.get(CONF_RULE_FLAP_WINDOW), DEFAULT_RULE_FLAP_WINDOW
+        ),
+        CONF_RULE_FLAP_BUDGET: _int_or_default(
+            merged.get(CONF_RULE_FLAP_BUDGET), DEFAULT_RULE_FLAP_BUDGET
+        ),
+        CONF_RULE_VALUE_MIN: _float_or_none(merged.get(CONF_RULE_VALUE_MIN)),
+        CONF_RULE_VALUE_MAX: _float_or_none(merged.get(CONF_RULE_VALUE_MAX)),
+        CONF_RULE_MAX_STEP: _float_or_none(merged.get(CONF_RULE_MAX_STEP)),
     }
     if rule[CONF_RULE_SEVERITY_MODE] == SEVERITY_MODE_SEMAFOR:
         numeric = rule.get(CONF_RULE_DATA_TYPE) == DATA_TYPE_NUMERIC
@@ -2293,6 +2430,43 @@ def _normalize_import_rule(raw: Any) -> tuple[dict[str, Any] | None, str | None]
     condition = raw.get(CONF_RULE_CONDITION)
     thresholds = list(raw.get(CONF_RULE_THRESHOLDS, []))
     direction = raw.get(CONF_RULE_DIRECTION)
+    reaches_shutdown = (
+        LEVEL_SHUTDOWN in (raw.get(CONF_RULE_LEVELS) or {})
+        if severity_mode == SEVERITY_MODE_SEMAFOR
+        else level == LEVEL_SHUTDOWN
+    )
+    try:
+        max_age = int(raw.get(CONF_RULE_MAX_AGE, DEFAULT_RULE_MAX_AGE) or 0)
+        min_sources = int(
+            raw.get(CONF_RULE_MIN_SOURCES, DEFAULT_RULE_MIN_SOURCES) or 1
+        )
+    except (TypeError, ValueError):
+        return None, "import_invalid_rule"
+    if max_age < 0 or min_sources < 1:
+        return None, "import_invalid_rule"
+    try:
+        recovery = int(raw.get(CONF_RULE_RECOVERY, DEFAULT_RULE_RECOVERY) or 0)
+        flap_window = int(raw.get(CONF_RULE_FLAP_WINDOW, DEFAULT_RULE_FLAP_WINDOW) or 0)
+        flap_budget = int(raw.get(CONF_RULE_FLAP_BUDGET, DEFAULT_RULE_FLAP_BUDGET) or 0)
+    except (TypeError, ValueError):
+        return None, "import_invalid_rule"
+    if recovery < 0 or flap_window < 0 or flap_budget < 0:
+        return None, "import_invalid_rule"
+    if bool(flap_window) != bool(flap_budget) or flap_budget > (flap_window or flap_budget):
+        return None, "import_invalid_rule"
+    value_min = _optional_float_or_error(raw.get(CONF_RULE_VALUE_MIN))
+    value_max = _optional_float_or_error(raw.get(CONF_RULE_VALUE_MAX))
+    max_step = _optional_float_or_error(raw.get(CONF_RULE_MAX_STEP))
+    if value_min is _INVALID or value_max is _INVALID or max_step is _INVALID:
+        return None, "import_invalid_rule"
+    if (
+        value_min is not None
+        and value_max is not None
+        and value_min > value_max
+    ):
+        return None, "import_invalid_rule"
+    if max_step is not None and max_step <= 0:
+        return None, "import_invalid_rule"
     levels: dict[str, dict[str, Any]] = {}
 
     if data_type == DATA_TYPE_NUMERIC:
@@ -2362,6 +2536,11 @@ def _normalize_import_rule(raw: Any) -> tuple[dict[str, Any] | None, str | None]
             return None, "import_invalid_rule"
         thresholds = [match_value]
 
+    if reaches_shutdown and unknown_handling == UNKNOWN_TREAT_VIOLATION:
+        # An unavailable input means the layer is degraded, not that the battery is
+        # in trouble - it must never be able to reach the shutdown level.
+        return None, "import_shutdown_treat_violation"
+
     rule = {
         CONF_RULE_ID: rule_id,
         CONF_RULE_NAME: name,
@@ -2380,12 +2559,48 @@ def _normalize_import_rule(raw: Any) -> tuple[dict[str, Any] | None, str | None]
         CONF_RULE_TEXT_TRIM: text_trim,
         CONF_RULE_NOTIFY_EMAIL: notify_email,
         CONF_RULE_NOTIFY_MOBILE: notify_mobile,
+        CONF_RULE_MAX_AGE: max_age,
+        CONF_RULE_VALUE_MIN: value_min,
+        CONF_RULE_VALUE_MAX: value_max,
+        CONF_RULE_MAX_STEP: max_step,
+        CONF_RULE_MIN_SOURCES: min_sources,
+        CONF_RULE_RECOVERY: recovery,
+        CONF_RULE_FLAP_WINDOW: flap_window,
+        CONF_RULE_FLAP_BUDGET: flap_budget,
     }
     if severity_mode == SEVERITY_MODE_SEMAFOR:
         rule[CONF_RULE_LEVELS] = levels
     else:
         rule[CONF_RULE_THRESHOLDS] = thresholds
     return rule, None
+
+
+_INVALID = object()
+
+
+def _int_or_default(value: Any, default: int) -> int:
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return default
+
+
+def _float_or_none(value: Any) -> float | None:
+    parsed = _optional_float_or_error(value)
+    return None if parsed is _INVALID else parsed
+
+
+def _optional_float_or_error(value: Any) -> Any:
+    """None when unset, the float when parseable, _INVALID when garbage."""
+    if value is None or value == "":
+        return None
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return _INVALID
+    if numeric != numeric or numeric in (float("inf"), float("-inf")):
+        return _INVALID
+    return numeric
 
 
 def _normalize_numeric_thresholds(
@@ -2442,7 +2657,17 @@ def _normalize_semafor_levels(
             return {}, "invalid"
         if interval > dur_val:
             return {}, "invalid"
-        levels[level] = {"threshold": value, "duration_seconds": dur_val}
+        entry: dict[str, Any] = {"threshold": value, "duration_seconds": dur_val}
+        min_sources = cfg.get(CONF_RULE_MIN_SOURCES)
+        if min_sources is not None:
+            try:
+                quorum = int(min_sources)
+            except (TypeError, ValueError):
+                return {}, "invalid"
+            if quorum < 1:
+                return {}, "invalid"
+            entry[CONF_RULE_MIN_SOURCES] = quorum
+        levels[level] = entry
     if not levels:
         return {}, "invalid"
     return levels, None
@@ -2497,6 +2722,22 @@ def _seed_rule_context(rule: dict[str, Any]) -> dict[str, Any]:
             CONF_RULE_TEXT_CASE_SENSITIVE, DEFAULT_TEXT_CASE_SENSITIVE
         ),
         CONF_RULE_TEXT_TRIM: rule.get(CONF_RULE_TEXT_TRIM, DEFAULT_TEXT_TRIM),
+        # Without these an edit would silently reset the trust settings to their
+        # defaults, i.e. drop the freshness/quorum guards of a shutdown rule.
+        CONF_RULE_MAX_AGE: rule.get(CONF_RULE_MAX_AGE, DEFAULT_RULE_MAX_AGE),
+        CONF_RULE_MIN_SOURCES: rule.get(
+            CONF_RULE_MIN_SOURCES, DEFAULT_RULE_MIN_SOURCES
+        ),
+        CONF_RULE_RECOVERY: rule.get(CONF_RULE_RECOVERY, DEFAULT_RULE_RECOVERY),
+        CONF_RULE_FLAP_WINDOW: rule.get(
+            CONF_RULE_FLAP_WINDOW, DEFAULT_RULE_FLAP_WINDOW
+        ),
+        CONF_RULE_FLAP_BUDGET: rule.get(
+            CONF_RULE_FLAP_BUDGET, DEFAULT_RULE_FLAP_BUDGET
+        ),
+        CONF_RULE_VALUE_MIN: rule.get(CONF_RULE_VALUE_MIN),
+        CONF_RULE_VALUE_MAX: rule.get(CONF_RULE_VALUE_MAX),
+        CONF_RULE_MAX_STEP: rule.get(CONF_RULE_MAX_STEP),
     }
     severity_mode = context[CONF_RULE_SEVERITY_MODE]
     if severity_mode == SEVERITY_MODE_SEMAFOR:

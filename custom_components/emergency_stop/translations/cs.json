@@ -72,7 +72,15 @@
           "latched": "Latched (vyžaduje reset)",
           "unknown_handling": "Chování při unknown",
           "notify_email": "E-mail notifikace (toto pravidlo)",
-          "notify_mobile": "Mobilní notifikace (toto pravidlo)"
+          "notify_mobile": "Mobilní notifikace (toto pravidlo)",
+          "max_age_seconds": "Maximální věk vstupu (s, 0 = bez kontroly svěžesti)",
+          "min_sources": "Minimální počet souhlasících zdrojů (kvórum)",
+          "recovery_seconds": "Držení zotavení (s, 0 = zrušit okamžitě)",
+          "flap_window_seconds": "Okno pro blikání (s, 0 = vypnuto)",
+          "flap_budget_seconds": "Rozpočet poruchy v okně (s)",
+          "value_min": "Plausibilní minimum (prázdné = bez kontroly)",
+          "value_max": "Plausibilní maximum (prázdné = bez kontroly)",
+          "max_step": "Maximální změna mezi vzorky (prázdné = bez kontroly)"
         }
       },
       "rule_numeric_semafor": {
@@ -112,7 +120,12 @@
           "latched": "Latched (vyžaduje reset)",
           "unknown_handling": "Chování při unknown",
           "notify_email": "E-mail notifikace (toto pravidlo)",
-          "notify_mobile": "Mobilní notifikace (toto pravidlo)"
+          "notify_mobile": "Mobilní notifikace (toto pravidlo)",
+          "max_age_seconds": "Maximální věk vstupu (s, 0 = bez kontroly svěžesti)",
+          "min_sources": "Minimální počet souhlasících zdrojů (kvórum)",
+          "recovery_seconds": "Držení zotavení (s, 0 = zrušit okamžitě)",
+          "flap_window_seconds": "Okno pro blikání (s, 0 = vypnuto)",
+          "flap_budget_seconds": "Rozpočet poruchy v okně (s)"
         }
       },
       "rule_binary_count": {
@@ -136,7 +149,12 @@
           "latched": "Latched (vyžaduje reset)",
           "unknown_handling": "Chování při unknown",
           "notify_email": "E-mail notifikace (toto pravidlo)",
-          "notify_mobile": "Mobilní notifikace (toto pravidlo)"
+          "notify_mobile": "Mobilní notifikace (toto pravidlo)",
+          "max_age_seconds": "Maximální věk vstupu (s, 0 = bez kontroly svěžesti)",
+          "min_sources": "Minimální počet souhlasících zdrojů (kvórum)",
+          "recovery_seconds": "Držení zotavení (s, 0 = zrušit okamžitě)",
+          "flap_window_seconds": "Okno pro blikání (s, 0 = vypnuto)",
+          "flap_budget_seconds": "Rozpočet poruchy v okně (s)"
         }
       },
       "rule_binary_count_semafor": {
@@ -173,7 +191,12 @@
           "text_case_sensitive": "Rozlišovat velikost písmen",
           "text_trim": "Ořezat mezery",
           "notify_email": "E-mail notifikace (toto pravidlo)",
-          "notify_mobile": "Mobilní notifikace (toto pravidlo)"
+          "notify_mobile": "Mobilní notifikace (toto pravidlo)",
+          "max_age_seconds": "Maximální věk vstupu (s, 0 = bez kontroly svěžesti)",
+          "min_sources": "Minimální počet souhlasících zdrojů (kvórum)",
+          "recovery_seconds": "Držení zotavení (s, 0 = zrušit okamžitě)",
+          "flap_window_seconds": "Okno pro blikání (s, 0 = vypnuto)",
+          "flap_budget_seconds": "Rozpočet poruchy v okně (s)"
         }
       },
       "add_rule": {
@@ -214,9 +237,13 @@
       "import_rules_required": "Import musí obsahovat alespoň jedno pravidlo",
       "import_duplicate_rule_id": "Import obsahuje duplicitní ID pravidel",
       "import_conflict": "Import koliduje s existujícími ID pravidel",
+      "import_shutdown_treat_violation": "Pravidlo s úrovní shutdown nesmí použít unknown_handling=treat_violation",
       "semafor_levels_required": "Je potřeba alespoň jedna úroveň semaforu",
       "semafor_order": "Prahy semaforu nejsou ve správném pořadí",
-      "duration_required": "Doba je povinná"
+      "duration_required": "Doba je povinná",
+      "shutdown_treat_violation": "Pravidlo s úrovní shutdown nesmí brát neznámý vstup jako porušení",
+      "flap_pair_required": "Okno a rozpočet pro blikání se musí nastavit společně",
+      "flap_budget_too_large": "Rozpočet nesmí být větší než okno"
     }
   },
   "options": {
@@ -330,7 +357,15 @@
           "latched": "Latched (vyžaduje reset)",
           "unknown_handling": "Chování při unknown",
           "notify_email": "E-mail notifikace (toto pravidlo)",
-          "notify_mobile": "Mobilní notifikace (toto pravidlo)"
+          "notify_mobile": "Mobilní notifikace (toto pravidlo)",
+          "max_age_seconds": "Maximální věk vstupu (s, 0 = bez kontroly svěžesti)",
+          "min_sources": "Minimální počet souhlasících zdrojů (kvórum)",
+          "recovery_seconds": "Držení zotavení (s, 0 = zrušit okamžitě)",
+          "flap_window_seconds": "Okno pro blikání (s, 0 = vypnuto)",
+          "flap_budget_seconds": "Rozpočet poruchy v okně (s)",
+          "value_min": "Plausibilní minimum (prázdné = bez kontroly)",
+          "value_max": "Plausibilní maximum (prázdné = bez kontroly)",
+          "max_step": "Maximální změna mezi vzorky (prázdné = bez kontroly)"
         }
       },
       "rule_numeric_semafor": {
@@ -370,7 +405,12 @@
           "latched": "Latched (vyžaduje reset)",
           "unknown_handling": "Chování při unknown",
           "notify_email": "E-mail notifikace (toto pravidlo)",
-          "notify_mobile": "Mobilní notifikace (toto pravidlo)"
+          "notify_mobile": "Mobilní notifikace (toto pravidlo)",
+          "max_age_seconds": "Maximální věk vstupu (s, 0 = bez kontroly svěžesti)",
+          "min_sources": "Minimální počet souhlasících zdrojů (kvórum)",
+          "recovery_seconds": "Držení zotavení (s, 0 = zrušit okamžitě)",
+          "flap_window_seconds": "Okno pro blikání (s, 0 = vypnuto)",
+          "flap_budget_seconds": "Rozpočet poruchy v okně (s)"
         }
       },
       "rule_binary_count": {
@@ -394,7 +434,12 @@
           "latched": "Latched (vyžaduje reset)",
           "unknown_handling": "Chování při unknown",
           "notify_email": "E-mail notifikace (toto pravidlo)",
-          "notify_mobile": "Mobilní notifikace (toto pravidlo)"
+          "notify_mobile": "Mobilní notifikace (toto pravidlo)",
+          "max_age_seconds": "Maximální věk vstupu (s, 0 = bez kontroly svěžesti)",
+          "min_sources": "Minimální počet souhlasících zdrojů (kvórum)",
+          "recovery_seconds": "Držení zotavení (s, 0 = zrušit okamžitě)",
+          "flap_window_seconds": "Okno pro blikání (s, 0 = vypnuto)",
+          "flap_budget_seconds": "Rozpočet poruchy v okně (s)"
         }
       },
       "rule_binary_count_semafor": {
@@ -431,7 +476,12 @@
           "text_case_sensitive": "Rozlišovat velikost písmen",
           "text_trim": "Ořezat mezery",
           "notify_email": "E-mail notifikace (toto pravidlo)",
-          "notify_mobile": "Mobilní notifikace (toto pravidlo)"
+          "notify_mobile": "Mobilní notifikace (toto pravidlo)",
+          "max_age_seconds": "Maximální věk vstupu (s, 0 = bez kontroly svěžesti)",
+          "min_sources": "Minimální počet souhlasících zdrojů (kvórum)",
+          "recovery_seconds": "Držení zotavení (s, 0 = zrušit okamžitě)",
+          "flap_window_seconds": "Okno pro blikání (s, 0 = vypnuto)",
+          "flap_budget_seconds": "Rozpočet poruchy v okně (s)"
         }
       },
       "add_rule": {
@@ -471,10 +521,14 @@
       "import_rules_required": "Import musí obsahovat alespoň jedno pravidlo",
       "import_duplicate_rule_id": "Import obsahuje duplicitní ID pravidel",
       "import_conflict": "Import koliduje s existujícími ID pravidel",
+      "import_shutdown_treat_violation": "Pravidlo s úrovní shutdown nesmí použít unknown_handling=treat_violation",
       "export_failed": "Export selhal",
       "semafor_levels_required": "Je potřeba alespoň jedna úroveň semaforu",
       "semafor_order": "Prahy semaforu nejsou ve správném pořadí",
-      "duration_required": "Doba je povinná"
+      "duration_required": "Doba je povinná",
+      "shutdown_treat_violation": "Pravidlo s úrovní shutdown nesmí brát neznámý vstup jako porušení",
+      "flap_pair_required": "Okno a rozpočet pro blikání se musí nastavit společně",
+      "flap_budget_too_large": "Rozpočet nesmí být větší než okno"
     }
   }
 }

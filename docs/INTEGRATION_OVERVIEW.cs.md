@@ -29,7 +29,26 @@ Pokud je aktivních více pravidel, platí nejvyšší úroveň (`shutdown` > `l
 - Klíčové atributy: `error_level`, `primary_*`, `active_events`, `active_reasons`,
   `active_levels`, `events_by_reason`, `acknowledged`, `last_update`, `latched_since`.
 
-2. `binary_sensor.emergency_stop_<rule_id>`
+2. `binary_sensor.emergency_stop_shutdown`
+- Jediný signál, ze kterého se smí spínat reálná zátěž.
+- On, pokud pravidla vyhodnotí úroveň `shutdown`. Simulace ho nikdy nezvedne a nižší
+  úroveň také ne — na rozdíl od `emergency_stop_active`, který svítí už od `notify`.
+- Klíčové atributy: `error_level`, `primary_*`, `latched_since`, `simulation_active`
+  a `active_events` filtrované na shutdown události.
+- Pravidlo pro zapojení: spouštěj na explicitní `on`. Entita je `unavailable`, kdykoli
+  koordinátor nemůže aktualizovat, takže podmínka „není off“ by to čtla jako poplach.
+
+3. `binary_sensor.emergency_stop_protection_degraded`
+- Zviditelňuje stav, kdy ochrana neslyší.
+- On, pokud shutdown pravidlo delší dobu než grace nemá dost důvěryhodných vstupů na
+  rozhodnutí (zastaralé, mimo rozsah, nekonečné nebo chybějící hodnoty).
+- Klíčové atributy: `degraded_rules` s `trusted_sources`, `untrusted_inputs`,
+  `required_sources` a `blind_for_seconds` pro každé pravidlo.
+- Důvod: nedůvěryhodný vstup se záměrně nikdy nebere jako porušení — to by vypnulo dům
+  při každém výpadku integrace — takže bez tohoto signálu by ochrana mohla tiše přestat
+  fungovat.
+
+4. `binary_sensor.emergency_stop_<rule_id>`
 - Přímý trigger pro konkrétní pravidlo.
 - On, pokud je dané pravidlo aktivní.
 - Atributy obsahují konfiguraci pravidla i runtime stav.
@@ -127,7 +146,8 @@ Chování:
 - při poklesu se posílá na cíle **nového levelu** i **původního levelu**,
 - návrat na `normal` posílá na cíle `notify`,
 - report button posílá **TEST** notifikaci na všechna zařízení.
-- odesílání notifikací/e‑mailu je omezeno timeoutem 3 s, aby neblokovalo nastavení stavu.
+- notifikace i e‑mail běží mimo evaluační cyklus (s timeoutem 3 s), takže pomalá notify
+  služba nezdrží ani další vyhodnocení, ani publikaci stavu, na který reaguje fyzický stop.
 
 Urgent payload:
 - iOS: `push.interruption-level: critical`
@@ -257,5 +277,29 @@ Pro `unknown`, `unavailable`, chybějící nebo neplatné hodnoty:
 
 ### Latched
 
-Pokud `latched=true`, pravidlo zůstává aktivní do resetu, i když podmínka přestane platit.
-V režimu Semafor se drží nejvyšší dosažená úroveň až do resetu.
+Pokud `latched=true`, pravidlo zůstává aktivní až do resetu, i když podmínka zmizí.
+V režimu semafor zůstává latchnutá nejvyšší dosažená úroveň.
+
+Latch se ukládá a přežije restart, takže reload, který spouští každé uložení options,
+už aktivní poplach nesmaže. Uložený latch se zahodí jen tehdy, když se od jeho vyhlášení
+změnila rozhodující konfigurace pravidla (entity, prahy, doba, úroveň, kvórum, flap
+nastavení) - poplach vyhlášený proti jiným prahům o těch nových nic neříká.
+
+### Důvěryhodnost vstupů
+
+Pojistky na úrovni pravidla, ve výchozím stavu vypnuté. Pravidlo, které může dosáhnout
+`shutdown`, by je mít mělo - bez nich rozhoduje podle jednoho neověřeného čtení senzoru.
+
+| Pole | Význam |
+|---|---|
+| `max_age_seconds` | Starší vstup je `stale` a zahodí se. Věk se bere z `last_reported`, pak `last_updated`/`last_changed`; nezjistitelný věk se považuje za zastaralý. |
+| `value_min` / `value_max` | Plausibilní rozsah; mimo něj je vstup `out_of_range`. `nan`/`inf` jsou vždy `not_finite`. |
+| `max_step` | Největší přijatá změna mezi vzorky; větší je `jump`, ale jen několikrát po sobě, aby reálný rychlý růst nezůstal navěky skrytý. |
+| `min_sources` | Kvórum: podmínka musí platit pro tolik vstupů nezávisle (agregace `max`/`min`). Méně důvěryhodných vstupů než kvórum dá `quorum_not_met` místo rozhodnutí. Per-úroveň: `levels.<level>.min_sources`. |
+| `recovery_seconds` | Jak dlouho musí být vstup zdravý, než se zahodí naběhlá doba porušení; jinak každé krátké zotavení začíná od nuly. |
+| `flap_window_seconds` + `flap_budget_seconds` | Kumulativní rozpočet poruchy v klouzavém okně, pro vstupy, které nikdy nespadnou na dost dlouho v jednom kuse, ale celkově jsou nepoužitelné. Nutné nastavit oba. |
+
+`unknown_handling: treat_violation` je na shutdown pravidle odmítnuto (options flow,
+import i načtení): vyhlásí se přesně tehdy, když vstupy chybí, tedy když je degradovaná
+vrstva, ne když má baterie problém. Takové situace zvedají
+`binary_sensor.emergency_stop_protection_degraded`.

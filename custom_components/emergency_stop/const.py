@@ -29,6 +29,21 @@ CONF_RULE_TEXT_TRIM = "text_trim"
 CONF_RULE_NOTIFY_EMAIL = "notify_email"
 CONF_RULE_NOTIFY_MOBILE = "notify_mobile"
 
+# Input-trust fields. All default to "off" so existing rules keep their behaviour,
+# but a rule that can reach `shutdown` should set them: an input that is stale,
+# implausible or physically impossible must never be able to switch load.
+CONF_RULE_MAX_AGE = "max_age_seconds"
+CONF_RULE_VALUE_MIN = "value_min"
+CONF_RULE_VALUE_MAX = "value_max"
+CONF_RULE_MAX_STEP = "max_step"
+CONF_RULE_MIN_SOURCES = "min_sources"
+# Flap/hysteresis fields. `recovery_seconds` keeps a violation timer running while
+# the input is briefly healthy again; the flap pair catches inputs that never fail
+# long enough in one go but are unusable overall.
+CONF_RULE_RECOVERY = "recovery_seconds"
+CONF_RULE_FLAP_WINDOW = "flap_window_seconds"
+CONF_RULE_FLAP_BUDGET = "flap_budget_seconds"
+
 # Config-flow helper fields (not persisted in entry data)
 CONF_RULE_THRESHOLD = "threshold"
 CONF_RULE_THRESHOLD_LOW = "threshold_low"
@@ -96,6 +111,11 @@ ATTR_LAST_UPDATE = "last_update"
 ATTR_LATCHED_SINCE = "latched_since"
 ATTR_ERROR_LEVEL = "error_level"
 ATTR_PRIMARY_LEVEL = "primary_level"
+ATTR_SIMULATION_ACTIVE = "simulation_active"
+ATTR_TRUSTED_SOURCES = "trusted_sources"
+ATTR_UNTRUSTED_INPUTS = "untrusted_inputs"
+ATTR_DEGRADED_RULES = "degraded_rules"
+ATTR_PROTECTION_DEGRADED = "protection_degraded"
 
 SERVICE_RESET = "reset"
 SERVICE_ACK = "acknowledge"
@@ -161,6 +181,20 @@ DEFAULT_RULE_LATCHED = True
 DEFAULT_RULE_UNKNOWN_HANDLING = UNKNOWN_IGNORE
 DEFAULT_RULE_NOTIFY_EMAIL = True
 DEFAULT_RULE_NOTIFY_MOBILE = True
+DEFAULT_RULE_MAX_AGE = 0
+DEFAULT_RULE_MIN_SOURCES = 1
+DEFAULT_RULE_RECOVERY = 0
+DEFAULT_RULE_FLAP_WINDOW = 0
+DEFAULT_RULE_FLAP_BUDGET = 0
+# A rejected jump must not blind the rule forever: after this many consecutive
+# rejects the new value is accepted as the sensor's real level.
+MAX_CONSECUTIVE_JUMP_REJECTS = 3
+# Invalid inputs are only logged at debug for this long after setup: rules are
+# evaluated seconds after startup, before the source integrations exist.
+STARTUP_GRACE_SECONDS = 120
+# How long an undecidable shutdown-capable rule must stay undecidable before the
+# protection is reported as degraded (restarts and short blips must not fire it).
+PROTECTION_DEGRADED_GRACE_SECONDS = 60
 DEFAULT_TEXT_CASE_SENSITIVE = False
 DEFAULT_TEXT_TRIM = True
 DEFAULT_MOBILE_NOTIFY_ENABLED = False
@@ -170,6 +204,11 @@ DEFAULT_MOBILE_NOTIFY_URGENT_SHUTDOWN = True
 DEFAULT_EMAIL_LEVELS = [LEVEL_NOTIFY, LEVEL_LIMIT, LEVEL_SHUTDOWN]
 DEFAULT_REPORT_RETENTION_MAX_FILES = 0
 DEFAULT_REPORT_RETENTION_MAX_AGE_DAYS = 0
+
+# A simulation always expires on its own. An open-ended one used to mask the real
+# rule state for as long as it ran, which is not acceptable for a safety layer.
+DEFAULT_SIMULATION_DURATION_SECONDS = 300
+MAX_SIMULATION_DURATION_SECONDS = 3600
 
 SEVERITY_MODE_SIMPLE = "simple"
 SEVERITY_MODE_SEMAFOR = "semafor"

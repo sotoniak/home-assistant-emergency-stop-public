@@ -147,11 +147,62 @@ Settings export/import is available in the options UI (not as a service):
 - Settings export file: `/media/emergency-stop/config/emergency_stop_settings_<entry_id>_<timestamp>.json`
 
 ### Entities
-- `binary_sensor.emergency_stop_active`
+- `binary_sensor.emergency_stop_active` — on from `notify` upwards. **Do not switch load from this**: it cannot tell an informational rule from a shutdown.
+- `binary_sensor.emergency_stop_shutdown` — on only for a rule-derived `shutdown` level, and a simulation cannot raise it. This is the one signal safe to drive a contactor or stop circuit from.
+- `binary_sensor.emergency_stop_protection_degraded` — on when a shutdown-capable rule cannot decide on its inputs for longer than the grace period (stale, implausible or missing inputs). Untrustworthy inputs deliberately never raise an alarm, so this is how a blind protection layer becomes visible.
 - `binary_sensor.emergency_stop_<rule_id>` (one per rule)
 - `sensor.emergency_stop_level` (returns `normal` when no violations are active)
 - `button.emergency_stop_reset`
 - `button.emergency_stop_report`
+
+### Wiring a physical stop
+
+If a level of this integration is allowed to switch real load, treat the following
+as requirements rather than suggestions:
+
+- Trigger on `binary_sensor.emergency_stop_shutdown` being explicitly `on`. Never
+  write the condition as "not off" — the entity becomes `unavailable` whenever the
+  coordinator cannot update, and "not off" reads that as an alarm.
+- Keep the hardware protection layer independent. This integration reacts to
+  published entity states, i.e. seconds; a BMS reacts in milliseconds.
+- Give every shutdown-capable rule `max_age_seconds`, `value_min`/`value_max` and
+  `min_sources` (below). Without them a rule decides on a single unvalidated reading.
+- Alert on `binary_sensor.emergency_stop_protection_degraded` too, otherwise a
+  silently blind rule looks exactly like a healthy one.
+
+### Input trust (per rule)
+
+All of these default to off, so existing rules keep behaving as before. A rule that
+can reach `shutdown` should set them.
+
+| Field | Meaning |
+|---|---|
+| `max_age_seconds` | An input older than this counts as `stale` and is dropped. Freshness comes from `last_reported`, falling back to `last_updated`/`last_changed`; an input whose age cannot be determined is treated as stale. |
+| `value_min` / `value_max` | Plausible range. Outside it the input is `out_of_range` and dropped. `nan`/`inf` are always rejected as `not_finite`. |
+| `max_step` | Largest change accepted between two samples; a bigger one is dropped as `jump` — but only a few times in a row, after which the new level is believed, so a genuinely fast rise cannot stay hidden. |
+| `min_sources` | Quorum: the condition must hold for this many inputs independently (`max`/`min` aggregates), and a rule with fewer trusted inputs than its quorum reports `quorum_not_met` instead of deciding. A per-level override lives in `levels.<level>.min_sources`, so `shutdown` can demand two sources while `notify` still fires on one. |
+| `recovery_seconds` | How long the input must be healthy before elapsed violation time is discarded. Without it every brief recovery — including a momentary `unavailable` — restarts the duration from zero. |
+| `flap_window_seconds` + `flap_budget_seconds` | Cumulative failure budget in a trailing window: fires when the input has been failing for `flap_budget_seconds` in total within `flap_window_seconds`, even if never long enough in one go. Both must be set together. |
+
+`unknown_handling: treat_violation` is rejected on a shutdown-capable rule — in the
+options flow, in rule import and at load time. It fires precisely when the inputs
+are missing, which means the layer is degraded rather than the battery being in
+trouble.
+
+### Latching and recovery
+
+A latched rule stays active until `emergency_stop.reset` (or the reset button).
+Latches are persisted, so a restart — including the reload every options save
+triggers — no longer clears an active alarm. A latch is dropped only when the
+rule's decisive configuration (entities, thresholds, duration, level, quorum, flap
+settings) changed since it was raised.
+
+### Simulation safety
+
+`emergency_stop.simulate_level` drives the display and notification surfaces only.
+It never raises `binary_sensor.emergency_stop_shutdown`, it no longer stops rules
+from being evaluated, and it always expires on its own (default 300 s, capped at
+3600 s).
 
 ### Rule Runtime Attributes (per-rule binary sensor)
 On `binary_sensor.emergency_stop_<rule_id>`, runtime attributes describe the latest evaluation snapshot:

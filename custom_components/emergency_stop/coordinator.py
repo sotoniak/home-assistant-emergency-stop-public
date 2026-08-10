@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 import asyncio
 import json
+import math
 from pathlib import Path
 import logging
 import time
@@ -17,10 +18,13 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from .brevo import async_send_brevo_email
 from homeassistant.helpers.event import async_call_later
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    AGGREGATE_MAX,
+    AGGREGATE_MIN,
     ATTR_ACKNOWLEDGED,
     ATTR_ACTIVE_EVENTS,
     ATTR_ACTIVE_LEVELS,
@@ -37,6 +41,8 @@ from .const import (
     ATTR_PRIMARY_REASON,
     ATTR_PRIMARY_SENSOR,
     ATTR_PRIMARY_VALUE,
+    ATTR_TRUSTED_SOURCES,
+    ATTR_UNTRUSTED_INPUTS,
     CONF_BREVO_API_KEY,
     CONF_BREVO_SENDER,
     CONF_BREVO_RECIPIENT,
@@ -66,7 +72,15 @@ from .const import (
     CONF_RULE_INTERVAL,
     CONF_RULE_LATCHED,
     CONF_RULE_LEVEL,
+    CONF_RULE_MAX_AGE,
+    CONF_RULE_MAX_STEP,
+    CONF_RULE_MIN_SOURCES,
+    CONF_RULE_RECOVERY,
+    CONF_RULE_FLAP_WINDOW,
+    CONF_RULE_FLAP_BUDGET,
     CONF_RULE_SEVERITY_MODE,
+    CONF_RULE_VALUE_MAX,
+    CONF_RULE_VALUE_MIN,
     CONF_RULE_DIRECTION,
     CONF_RULE_LEVELS,
     CONF_RULE_NAME,
@@ -105,6 +119,17 @@ from .const import (
     DEFAULT_EMAIL_LEVELS,
     DEFAULT_REPORT_RETENTION_MAX_AGE_DAYS,
     DEFAULT_REPORT_RETENTION_MAX_FILES,
+    DEFAULT_RULE_MAX_AGE,
+    DEFAULT_RULE_MIN_SOURCES,
+    DOMAIN,
+    DEFAULT_RULE_RECOVERY,
+    DEFAULT_RULE_FLAP_WINDOW,
+    DEFAULT_RULE_FLAP_BUDGET,
+    DEFAULT_SIMULATION_DURATION_SECONDS,
+    MAX_CONSECUTIVE_JUMP_REJECTS,
+    MAX_SIMULATION_DURATION_SECONDS,
+    PROTECTION_DEGRADED_GRACE_SECONDS,
+    STARTUP_GRACE_SECONDS,
     LEVEL_LIMIT,
     LEVEL_NORMAL,
     LEVEL_NOTIFY,
@@ -113,10 +138,13 @@ from .const import (
     LEVEL_SHUTDOWN,
     REPORT_MODE_BASIC,
     REPORT_MODE_EXTENDED,
+    SEVERITY_MODE_OPTIONS,
     SEVERITY_MODE_SEMAFOR,
     SEVERITY_MODE_SIMPLE,
     DIRECTION_HIGHER_IS_WORSE,
     DIRECTION_LOWER_IS_WORSE,
+    UNKNOWN_HANDLING_OPTIONS,
+    UNKNOWN_IGNORE,
     UNKNOWN_TREAT_OK,
     UNKNOWN_TREAT_VIOLATION,
 )
@@ -125,6 +153,9 @@ _LOGGER = logging.getLogger(__name__)
 
 _LEVEL_RANK = {LEVEL_NOTIFY: 1, LEVEL_LIMIT: 2, LEVEL_SHUTDOWN: 3}
 _NOTIFICATION_TIMEOUT_SECONDS = 3
+
+LATCH_STORAGE_VERSION = 1
+LATCH_SAVE_DELAY_SECONDS = 5
 
 REPORT_BASE_DIR = Path("/media/emergency-stop")
 REPORT_LOG_DIR = REPORT_BASE_DIR / "logs"
@@ -189,6 +220,30 @@ class RuleConfig:
     text_trim: bool
     notify_email: bool = True
     notify_mobile: bool = True
+    # Input trust. Defaults keep the pre-2.1 behaviour (no checks at all).
+    max_age_seconds: int = 0
+    value_min: float | None = None
+    value_max: float | None = None
+    max_step: float | None = None
+    min_sources: int = 1
+    recovery_seconds: int = 0
+    flap_window_seconds: int = 0
+    flap_budget_seconds: int = 0
+
+    def can_shutdown(self) -> bool:
+        """Whether this rule is able to raise the shutdown level."""
+        if self.severity_mode == SEVERITY_MODE_SEMAFOR:
+            return LEVEL_SHUTDOWN in self.levels
+        return self.level == LEVEL_SHUTDOWN
+
+    def level_min_sources(self, level: str) -> int:
+        """Quorum for a level: per-level override, else the rule default."""
+        cfg = self.levels.get(level) or {}
+        raw = cfg.get(CONF_RULE_MIN_SOURCES, self.min_sources)
+        try:
+            return max(1, int(raw))
+        except (TypeError, ValueError):
+            return max(1, int(self.min_sources))
 
 
 @dataclass
@@ -208,6 +263,12 @@ class RuleRuntimeState:
     level_violation_started_at: dict[str, float | None] = field(default_factory=dict)
     level_active_since: dict[str, str | None] = field(default_factory=dict)
     active_levels: list[str] = field(default_factory=list)
+    trusted_sources: int = 0
+    untrusted_inputs: dict[str, str] = field(default_factory=dict)
+    undecidable_since: float | None = None
+    recovery_started_at: float | None = None
+    violation_samples: list[float] = field(default_factory=list)
+    flap_seconds: int = 0
 
     def reset(self) -> None:
         self.active = False
@@ -225,6 +286,12 @@ class RuleRuntimeState:
         self.level_violation_started_at = {}
         self.level_active_since = {}
         self.active_levels = []
+        self.trusted_sources = 0
+        self.untrusted_inputs = {}
+        self.undecidable_since = None
+        self.recovery_started_at = None
+        self.violation_samples = []
+        self.flap_seconds = 0
 
 
 @dataclass
@@ -352,6 +419,8 @@ class RuleEvalResult:
     detail: str
     entity_id: str | None
     invalid_reason: str | None = None
+    trusted_sources: int = 0
+    untrusted_inputs: dict[str, str] = field(default_factory=dict)
 
 
 class RuleEngine:
@@ -363,6 +432,12 @@ class RuleEngine:
             rule.rule_id: RuleRuntimeState() for rule in rules
         }
         self._invalid_logged: set[tuple[str, str, str]] = set()
+        self._created_monotonic = time.monotonic()
+        # Per (rule, entity) history needed for jump rejection.
+        self._last_accepted: dict[tuple[str, str], float] = {}
+        self._jump_rejects: dict[tuple[str, str], int] = {}
+        # Last sampling result per rule, so the semafor path can report trust too.
+        self._last_samples: dict[str, tuple[list[tuple[str, Any]], dict[str, str]]] = {}
         self._seed_initial_offsets()
 
     @property
@@ -376,6 +451,61 @@ class RuleEngine:
     def reset(self) -> None:
         for state in self._states.values():
             state.reset()
+
+    def latch_snapshot(self) -> dict[str, Any]:
+        """Latched state worth surviving a restart, keyed by rule.
+
+        Only the latch is persisted, never the monotonic timers: a violation that
+        has not yet reached its duration has to prove itself again after a restart.
+        """
+        snapshot: dict[str, Any] = {}
+        for rule in self._rules:
+            if not rule.latched:
+                continue
+            state = self._states.get(rule.rule_id)
+            if state is None or not state.active:
+                continue
+            snapshot[rule.rule_id] = {
+                "fingerprint": _rule_fingerprint(rule),
+                "active_since": state.active_since,
+                "latched_level": state.latched_level,
+                "level_active_since": dict(state.level_active_since),
+                "last_detail": state.last_detail,
+            }
+        return snapshot
+
+    def restore_latches(self, snapshot: dict[str, Any] | None) -> list[str]:
+        """Re-arm latches saved before a restart. Returns the restored rule ids.
+
+        A latch is dropped when the rule's decisive configuration changed - an
+        alarm raised against different thresholds says nothing about the new ones.
+        """
+        if not snapshot:
+            return []
+        restored: list[str] = []
+        for rule in self._rules:
+            stored = snapshot.get(rule.rule_id)
+            if not isinstance(stored, dict) or not rule.latched:
+                continue
+            if stored.get("fingerprint") != _rule_fingerprint(rule):
+                _LOGGER.warning(
+                    "Rule %s changed since the latch was stored; not restoring it.",
+                    rule.rule_id,
+                )
+                continue
+            state = self._states.get(rule.rule_id)
+            if state is None:
+                continue
+            state.active = True
+            state.active_since = stored.get("active_since")
+            state.latched_level = stored.get("latched_level")
+            state.current_level = stored.get("latched_level")
+            state.last_detail = stored.get("last_detail")
+            stored_levels = stored.get("level_active_since")
+            if isinstance(stored_levels, dict):
+                state.level_active_since = dict(stored_levels)
+            restored.append(rule.rule_id)
+        return restored
 
     def _seed_initial_offsets(self) -> None:
         now_monotonic = time.monotonic()
@@ -449,8 +579,13 @@ class RuleEngine:
                 state.last_entity = result.entity_id
                 state.last_detail = result.detail
                 state.last_invalid_reason = result.invalid_reason
+                state.trusted_sources = result.trusted_sources
+                state.untrusted_inputs = dict(result.untrusted_inputs)
+
+                self._track_flap(rule, state, result.match, now_monotonic)
 
                 if result.match is True:
+                    state.recovery_started_at = None
                     if state.violation_started_at is None:
                         state.violation_started_at = now_monotonic
                     if (now_monotonic - state.violation_started_at) >= rule.duration_seconds:
@@ -458,13 +593,84 @@ class RuleEngine:
                             state.active = True
                             state.active_since = now_iso
                 else:
-                    state.violation_started_at = None
-                    if not rule.latched:
-                        state.active = False
-                        state.active_since = None
+                    if self._violation_timer_expired(rule, state, now_monotonic):
+                        state.violation_started_at = None
+                        state.recovery_started_at = None
+                        if not rule.latched:
+                            state.active = False
+                            state.active_since = None
+
+                if state.flap_seconds >= rule.flap_budget_seconds > 0:
+                    # Never long enough in one go, unusable overall.
+                    if not state.active:
+                        state.active = True
+                        state.active_since = now_iso
 
                 if self._simple_state_signature(state) != previous_signature:
                     state.last_update = now_iso
+
+            self._track_decidability(rule, state, now_monotonic)
+
+    @staticmethod
+    def _violation_timer_expired(
+        rule: RuleConfig, state: RuleRuntimeState, now_monotonic: float
+    ) -> bool:
+        """Whether a no-longer-matching rule may drop its violation timer.
+
+        With `recovery_seconds` the input has to stay healthy that long first, so
+        consecutive short failures accumulate instead of each one starting over -
+        and a brief `unavailable` blip no longer wipes the elapsed time.
+        """
+        if state.violation_started_at is None:
+            return True
+        if rule.recovery_seconds <= 0:
+            return True
+        if state.recovery_started_at is None:
+            state.recovery_started_at = now_monotonic
+        return (now_monotonic - state.recovery_started_at) >= rule.recovery_seconds
+
+    @staticmethod
+    def _track_flap(
+        rule: RuleConfig,
+        state: RuleRuntimeState,
+        match: bool | None,
+        now_monotonic: float,
+    ) -> None:
+        """Accumulate violating time inside a trailing window.
+
+        One sample per evaluation is worth `interval_seconds`, which is exactly how
+        often the rule is evaluated.
+        """
+        if rule.flap_window_seconds <= 0 or rule.flap_budget_seconds <= 0:
+            if state.violation_samples:
+                state.violation_samples = []
+            state.flap_seconds = 0
+            return
+        cutoff = now_monotonic - rule.flap_window_seconds
+        samples = [stamp for stamp in state.violation_samples if stamp > cutoff]
+        if match is True:
+            samples.append(now_monotonic)
+        state.violation_samples = samples
+        state.flap_seconds = len(samples) * max(1, rule.interval_seconds)
+
+    @staticmethod
+    def _track_decidability(
+        rule: RuleConfig, state: RuleRuntimeState, now_monotonic: float
+    ) -> None:
+        """Remember since when a shutdown-capable rule cannot decide.
+
+        Untrustworthy inputs never raise an alarm by themselves, so without this the
+        protection could go blind silently. `undecidable_since` is what the
+        protection-degraded signal is built from.
+        """
+        if not rule.can_shutdown():
+            state.undecidable_since = None
+            return
+        if state.trusted_sources < rule.level_min_sources(LEVEL_SHUTDOWN):
+            if state.undecidable_since is None:
+                state.undecidable_since = now_monotonic
+            return
+        state.undecidable_since = None
 
     def _evaluate_rule(self, rule: RuleConfig, hass: HomeAssistant) -> RuleEvalResult:
         if rule.data_type == DATA_TYPE_NUMERIC:
@@ -496,13 +702,19 @@ class RuleEngine:
             )
             value, entity_id, invalid_reason = None, None, "unsupported"
 
+        samples, untrusted = self._last_samples.pop(rule.rule_id, ([], {}))
         state.last_aggregate = value
         state.last_entity = entity_id
         state.last_invalid_reason = invalid_reason
+        state.trusted_sources = len(samples)
+        state.untrusted_inputs = dict(untrusted)
 
         matches: dict[str, bool | None] = {}
         if invalid_reason is not None:
-            if rule.unknown_handling == UNKNOWN_TREAT_VIOLATION:
+            if (
+                rule.unknown_handling == UNKNOWN_TREAT_VIOLATION
+                and not rule.can_shutdown()
+            ):
                 matches = {level: True for level in rule.levels}
             elif rule.unknown_handling == UNKNOWN_TREAT_OK:
                 matches = {level: False for level in rule.levels}
@@ -510,12 +722,32 @@ class RuleEngine:
                 matches = {level: None for level in rule.levels}
             state.last_detail = f"{rule.name}: {invalid_reason}"
         else:
+            quorum_samples = (
+                [single for _, single in samples]
+                if rule.data_type == DATA_TYPE_NUMERIC
+                and rule.aggregate in (AGGREGATE_MAX, AGGREGATE_MIN)
+                else []
+            )
             for level, cfg in rule.levels.items():
                 threshold = cfg["threshold"]
-                if rule.direction == DIRECTION_LOWER_IS_WORSE:
-                    matches[level] = value <= threshold
+                quorum = rule.level_min_sources(level)
+                if quorum > 1 and quorum_samples:
+                    if len(quorum_samples) < quorum:
+                        # Too few trusted inputs to decide this level at all.
+                        matches[level] = None
+                        continue
+                    agreeing = sum(
+                        1
+                        for single in quorum_samples
+                        if _crosses_threshold(rule.direction, single, threshold)
+                    )
+                    matches[level] = agreeing >= quorum
+                elif quorum > 1 and len(samples) < quorum:
+                    matches[level] = None
                 else:
-                    matches[level] = value >= threshold
+                    matches[level] = _crosses_threshold(
+                        rule.direction, value, threshold
+                    )
 
         active_levels: list[str] = []
         for level in LEVEL_ORDER:
@@ -562,49 +794,159 @@ class RuleEngine:
                 else None
             )
 
-        if state.current_level and invalid_reason is None:
-            threshold = rule.levels[state.current_level]["threshold"]
-            state.last_detail = _format_semafor_detail(
-                rule, state.current_level, value, threshold
-            )
+        if invalid_reason is None:
+            if state.current_level:
+                threshold = rule.levels[state.current_level]["threshold"]
+                state.last_detail = _format_semafor_detail(
+                    rule, state.current_level, value, threshold
+                )
+            else:
+                # Without this branch the detail kept whatever it last said - usually
+                # an invalid-input reason from startup - for as long as the rule was
+                # healthy, which reads as "this rule is blind" when it is fine.
+                state.last_detail = _format_semafor_ok_detail(rule, value)
 
         if self._semafor_state_signature(rule, state) != previous_signature:
             state.last_update = now_iso
 
-    def _evaluate_numeric(self, rule: RuleConfig, hass: HomeAssistant) -> RuleEvalResult:
+    def _numeric_samples(
+        self, rule: RuleConfig, hass: HomeAssistant
+    ) -> tuple[list[tuple[str, float]], dict[str, str]]:
+        """Collect the numeric inputs a rule is allowed to decide on.
+
+        An input is only returned when it parses, is finite, is fresh enough, sits
+        inside the plausible range and did not jump further than physics allows.
+        Everything else is reported as untrusted instead of as a value, so a broken
+        sensor can never look like a violation.
+        """
         values: list[tuple[str, float]] = []
+        untrusted: dict[str, str] = {}
+        now = dt_util.utcnow()
         for entity_id in rule.entities:
             state = hass.states.get(entity_id)
             value, reason = _parse_numeric_state(state)
+            if reason is None:
+                reason = self._trust_numeric(rule, entity_id, value, state, now)
             if reason is not None:
+                untrusted[entity_id] = reason
                 self._log_invalid(rule, entity_id, reason, state)
                 continue
             values.append((entity_id, value))
+        return values, untrusted
 
-        if not values:
-            return _handle_unknown(rule, "no_valid_values")
+    def _trust_numeric(
+        self,
+        rule: RuleConfig,
+        entity_id: str,
+        value: float,
+        state: Any,
+        now: Any,
+    ) -> str | None:
+        """Return an untrusted-reason for a parsed value, or None if usable."""
+        key = (rule.rule_id, entity_id)
+        if rule.max_age_seconds > 0:
+            age = _state_age_seconds(state, now)
+            if age is None or age > rule.max_age_seconds:
+                # An unknown age counts as stale: with a freshness requirement in
+                # place, "cannot tell" must not read as "current".
+                return "stale"
+        if rule.value_min is not None and value < rule.value_min:
+            return "out_of_range"
+        if rule.value_max is not None and value > rule.value_max:
+            return "out_of_range"
+        if rule.max_step is not None:
+            previous = self._last_accepted.get(key)
+            if previous is not None and abs(value - previous) > rule.max_step:
+                rejects = self._jump_rejects.get(key, 0) + 1
+                if rejects < MAX_CONSECUTIVE_JUMP_REJECTS:
+                    self._jump_rejects[key] = rejects
+                    return "jump"
+                # Stop rejecting: a sustained new level is the sensor's reality,
+                # and refusing it forever would hide a real event.
+                _LOGGER.warning(
+                    "Rule %s (%s): accepting %s after %s rejected jumps (%s -> %s)",
+                    rule.name,
+                    rule.rule_id,
+                    entity_id,
+                    rejects,
+                    previous,
+                    value,
+                )
+        self._jump_rejects.pop(key, None)
+        self._last_accepted[key] = value
+        return None
 
-        if not _has_required_thresholds(rule):
-            _LOGGER.error("Rule %s (%s): missing thresholds", rule.name, rule.rule_id)
-            return _handle_unknown(rule, "missing_thresholds")
-
-        aggregate, entity_id = _aggregate_numeric(values, rule.aggregate)
-        match = _compare_numeric(aggregate, rule.condition, rule.thresholds)
-        detail = _format_numeric_detail(rule, aggregate)
-        return RuleEvalResult(match, aggregate, detail, entity_id)
-
-    def _evaluate_binary(self, rule: RuleConfig, hass: HomeAssistant) -> RuleEvalResult:
+    def _binary_samples(
+        self, rule: RuleConfig, hass: HomeAssistant
+    ) -> tuple[list[tuple[str, str]], dict[str, str]]:
         values: list[tuple[str, str]] = []
+        untrusted: dict[str, str] = {}
+        now = dt_util.utcnow()
         for entity_id in rule.entities:
             state = hass.states.get(entity_id)
             value, reason = _parse_binary_state(state)
+            if reason is None and rule.max_age_seconds > 0:
+                age = _state_age_seconds(state, now)
+                if age is None or age > rule.max_age_seconds:
+                    reason = "stale"
             if reason is not None:
+                untrusted[entity_id] = reason
                 self._log_invalid(rule, entity_id, reason, state)
                 continue
             values.append((entity_id, value))
+        return values, untrusted
+
+    def _evaluate_numeric(self, rule: RuleConfig, hass: HomeAssistant) -> RuleEvalResult:
+        values, untrusted = self._numeric_samples(rule, hass)
 
         if not values:
-            return _handle_unknown(rule, "no_valid_values")
+            return _handle_unknown(rule, "no_valid_values", untrusted=untrusted)
+
+        if not _has_required_thresholds(rule):
+            _LOGGER.error("Rule %s (%s): missing thresholds", rule.name, rule.rule_id)
+            return _handle_unknown(
+                rule, "missing_thresholds", trusted=len(values), untrusted=untrusted
+            )
+
+        if len(values) < rule.min_sources:
+            # Not enough independent inputs to decide - report it instead of
+            # deciding on a thinner sample than configured.
+            return _handle_unknown(
+                rule, "quorum_not_met", trusted=len(values), untrusted=untrusted
+            )
+
+        aggregate, entity_id = _aggregate_numeric(values, rule.aggregate)
+        match = _compare_numeric(aggregate, rule.condition, rule.thresholds)
+        if (
+            match
+            and rule.min_sources > 1
+            and rule.aggregate in (AGGREGATE_MAX, AGGREGATE_MIN)
+        ):
+            # Quorum: the condition has to hold for min_sources inputs on their own,
+            # not just for the most extreme one. Only meaningful for max/min - with
+            # sum or avg the aggregate itself is the quantity of interest, so there
+            # the quorum only governs how many trusted inputs must exist (above).
+            agreeing = sum(
+                1
+                for _, single in values
+                if _compare_numeric(single, rule.condition, rule.thresholds)
+            )
+            match = agreeing >= rule.min_sources
+        detail = _format_numeric_detail(rule, aggregate)
+        return RuleEvalResult(
+            match,
+            aggregate,
+            detail,
+            entity_id,
+            trusted_sources=len(values),
+            untrusted_inputs=untrusted,
+        )
+
+    def _evaluate_binary(self, rule: RuleConfig, hass: HomeAssistant) -> RuleEvalResult:
+        values, untrusted = self._binary_samples(rule, hass)
+
+        if not values:
+            return _handle_unknown(rule, "no_valid_values", untrusted=untrusted)
 
         if rule.aggregate == "count":
             if not _has_required_thresholds(rule):
@@ -613,11 +955,23 @@ class RuleEngine:
                     rule.name,
                     rule.rule_id,
                 )
-                return _handle_unknown(rule, "missing_thresholds")
+                return _handle_unknown(
+                    rule,
+                    "missing_thresholds",
+                    trusted=len(values),
+                    untrusted=untrusted,
+                )
             count_on = sum(1 for _, value in values if value == "on")
             match = _compare_numeric(count_on, rule.condition, rule.thresholds)
             detail = _format_binary_count_detail(rule, count_on)
-            return RuleEvalResult(match, count_on, detail, None)
+            return RuleEvalResult(
+                match,
+                count_on,
+                detail,
+                None,
+                trusted_sources=len(values),
+                untrusted_inputs=untrusted,
+            )
 
         if rule.condition not in (COND_IS_ON, COND_IS_OFF):
             _LOGGER.error(
@@ -626,18 +980,27 @@ class RuleEngine:
                 rule.rule_id,
                 rule.condition,
             )
-            return _handle_unknown(rule, "invalid_condition")
+            return _handle_unknown(
+                rule, "invalid_condition", trusted=len(values), untrusted=untrusted
+            )
 
         target = "on" if rule.condition == COND_IS_ON else "off"
         matching = [entity_id for entity_id, value in values if value == target]
         if rule.aggregate == "any":
-            match = bool(matching)
+            match = len(matching) >= rule.min_sources
             entity_id = matching[0] if matching else None
         else:
             match = len(matching) == len(values)
             entity_id = values[0][0] if values else None
         detail = _format_binary_state_detail(rule, target)
-        return RuleEvalResult(match, None, detail, entity_id)
+        return RuleEvalResult(
+            match,
+            None,
+            detail,
+            entity_id,
+            trusted_sources=len(values),
+            untrusted_inputs=untrusted,
+        )
 
     def _evaluate_text(self, rule: RuleConfig, hass: HomeAssistant) -> RuleEvalResult:
         values: list[tuple[str, str]] = []
@@ -689,14 +1052,8 @@ class RuleEngine:
     def _collect_numeric_value(
         self, rule: RuleConfig, hass: HomeAssistant
     ) -> tuple[float | None, str | None, str | None]:
-        values: list[tuple[str, float]] = []
-        for entity_id in rule.entities:
-            state = hass.states.get(entity_id)
-            value, reason = _parse_numeric_state(state)
-            if reason is not None:
-                self._log_invalid(rule, entity_id, reason, state)
-                continue
-            values.append((entity_id, value))
+        values, untrusted = self._numeric_samples(rule, hass)
+        self._last_samples[rule.rule_id] = (values, untrusted)
 
         if not values:
             return None, None, "no_valid_values"
@@ -707,14 +1064,8 @@ class RuleEngine:
     def _collect_binary_count(
         self, rule: RuleConfig, hass: HomeAssistant
     ) -> tuple[int | None, str | None, str | None]:
-        values: list[tuple[str, str]] = []
-        for entity_id in rule.entities:
-            state = hass.states.get(entity_id)
-            value, reason = _parse_binary_state(state)
-            if reason is not None:
-                self._log_invalid(rule, entity_id, reason, state)
-                continue
-            values.append((entity_id, value))
+        values, untrusted = self._binary_samples(rule, hass)
+        self._last_samples[rule.rule_id] = (values, untrusted)
 
         if not values:
             return None, None, "no_valid_values"
@@ -727,6 +1078,20 @@ class RuleEngine:
     ) -> None:
         state_value = state.state if state is not None else None
         key = (rule.rule_id, entity_id, reason)
+        if (time.monotonic() - self._created_monotonic) < STARTUP_GRACE_SECONDS:
+            # Rules are evaluated seconds after setup, before the source
+            # integrations have created their entities. That produced a wall of
+            # warnings on every restart; keep it at debug and do not remember it, so
+            # an input that is still invalid afterwards still warns once.
+            _LOGGER.debug(
+                "Rule %s (%s): invalid state for %s (%s) during startup grace: %s",
+                rule.name,
+                rule.rule_id,
+                entity_id,
+                reason,
+                state_value,
+            )
+            return
         if key not in self._invalid_logged:
             _LOGGER.warning(
                 "Rule %s (%s): invalid state for %s (%s): %s",
@@ -821,10 +1186,20 @@ class EmergencyStopCoordinator(DataUpdateCoordinator[EmergencyStopState]):
         self._suppress_level_notification = False
         self._simulation: SimulationState | None = None
         self._simulation_cancel: Callable[[], None] | None = None
+        self._notification_task: asyncio.Task | None = None
 
         rules = _load_rules(config)
         self._rule_engine = RuleEngine(rules)
         self._stop_state = EmergencyStopState(level=LEVEL_NORMAL)
+        # Rule-derived state, never overwritten by a simulation. Everything a
+        # physical stop may be wired to reads this, not _stop_state.
+        self._real_stop_state = EmergencyStopState(level=LEVEL_NORMAL)
+        # Latches outlive restarts and options reloads; only reset/acknowledge and a
+        # changed rule definition clear them.
+        self._latch_store: Store = Store(
+            hass, LATCH_STORAGE_VERSION, f"{DOMAIN}.latches.{entry.entry_id}"
+        )
+        self._latch_saved: dict[str, Any] | None = None
 
         update_interval = timedelta(seconds=_min_interval(rules))
         super().__init__(
@@ -836,31 +1211,37 @@ class EmergencyStopCoordinator(DataUpdateCoordinator[EmergencyStopState]):
 
     async def _async_update_data(self) -> EmergencyStopState:
         now_monotonic = time.monotonic()
-        if self._simulation:
-            if (
-                self._simulation.expires_at_monotonic is not None
-                and now_monotonic >= self._simulation.expires_at_monotonic
-            ):
-                send_notifications = self._simulation.send_notifications
-                self._simulation = None
-                if self._simulation_cancel:
-                    self._simulation_cancel()
-                    self._simulation_cancel = None
-                if not send_notifications:
-                    self._suppress_level_notification = True
-            else:
-                self._stop_state = self._build_simulation_state()
-                return self._stop_state
+        if self._simulation and (
+            self._simulation.expires_at_monotonic is not None
+            and now_monotonic >= self._simulation.expires_at_monotonic
+        ):
+            send_notifications = self._simulation.send_notifications
+            self._simulation = None
+            if self._simulation_cancel:
+                self._simulation_cancel()
+                self._simulation_cancel = None
+            if not send_notifications:
+                self._suppress_level_notification = True
 
         prev_mobile_level = self._last_mobile_level
         prev_email_active = self._last_email_active
+        # Rules are evaluated on every cycle, simulation or not. A simulation used
+        # to return early here, which left the safety layer blind for as long as it
+        # ran - unacceptable once a physical stop depends on this state.
         self._rule_engine.evaluate(self.hass)
-        self._stop_state = _build_stop_state(
+        self._real_stop_state = _build_stop_state(
             self._rule_engine.rules,
             self._rule_engine.states,
             self._acknowledged,
-            previous=self._stop_state,
+            previous=self._real_stop_state,
         )
+        self._persist_latches()
+        if self._simulation:
+            # Display/notification surfaces show the simulation; the rule-derived
+            # state above keeps flowing to shutdown_active underneath it.
+            self._stop_state = self._build_simulation_state()
+            return self._stop_state
+        self._stop_state = self._real_stop_state
         email_rules = [rule for rule in self._rule_engine.rules if rule.notify_email]
         mobile_rules = [rule for rule in self._rule_engine.rules if rule.notify_mobile]
         email_state = _build_stop_state(
@@ -888,8 +1269,27 @@ class EmergencyStopCoordinator(DataUpdateCoordinator[EmergencyStopState]):
                 )
             )
             self._last_mobile_level = mobile_state.level
-        await self._run_side_effects(side_effects, "notifications/email")
+        # Detached on purpose: mobile notify is a blocking service call and e-mail is
+        # network I/O. Awaiting them here delayed both the next evaluation and the
+        # publication of the state a physical stop reacts to.
+        self._schedule_side_effects(side_effects, "notifications/email")
         return self._stop_state
+
+    def _schedule_side_effects(
+        self, coros: list[Awaitable[Any]], label: str
+    ) -> None:
+        if not coros:
+            return
+        self._notification_task = self.hass.async_create_task(
+            self._run_side_effects(coros, label)
+        )
+
+    async def async_wait_for_notifications(self) -> None:
+        """Await the notifications started by the last update, if any."""
+        task = self._notification_task
+        if task is not None:
+            self._notification_task = None
+            await task
 
     @property
     def rules(self) -> list[RuleConfig]:
@@ -899,11 +1299,45 @@ class EmergencyStopCoordinator(DataUpdateCoordinator[EmergencyStopState]):
     def rule_states(self) -> dict[str, RuleRuntimeState]:
         return self._rule_engine.states
 
+    async def async_restore_latches(self) -> None:
+        """Re-arm stored latches before the first evaluation.
+
+        Without this a restart - including the reload every options save triggers -
+        silently cleared an active latched alarm.
+        """
+        try:
+            stored = await self._latch_store.async_load()
+        except Exception:
+            _LOGGER.exception("Failed to load stored Emergency Stop latches.")
+            return
+        payload = stored.get("latches") if isinstance(stored, dict) else None
+        restored = self._rule_engine.restore_latches(payload)
+        self._latch_saved = payload if isinstance(payload, dict) else None
+        if restored:
+            _LOGGER.warning(
+                "Emergency Stop re-armed latched rules after restart: %s. "
+                "They stay active until reset.",
+                ", ".join(sorted(restored)),
+            )
+
+    def _persist_latches(self) -> None:
+        snapshot = self._rule_engine.latch_snapshot()
+        if snapshot == self._latch_saved:
+            return
+        self._latch_saved = snapshot
+        self._latch_store.async_delay_save(
+            lambda: {"latches": snapshot}, LATCH_SAVE_DELAY_SECONDS
+        )
+
     def reset(self) -> None:
         now_iso = dt_util.utcnow().isoformat()
         self._acknowledged = False
         self._rule_engine.reset()
+        self._persist_latches()
         self._stop_state = EmergencyStopState(last_update=now_iso, level=LEVEL_NORMAL)
+        self._real_stop_state = EmergencyStopState(
+            last_update=now_iso, level=LEVEL_NORMAL
+        )
 
     def acknowledge(self) -> None:
         now_iso = dt_util.utcnow().isoformat()
@@ -914,6 +1348,58 @@ class EmergencyStopCoordinator(DataUpdateCoordinator[EmergencyStopState]):
     @property
     def stop_state(self) -> EmergencyStopState:
         return self._stop_state
+
+    @property
+    def real_stop_state(self) -> EmergencyStopState:
+        """State derived from the rules only - a simulation never touches it."""
+        return self._real_stop_state
+
+    def degraded_rules(self) -> list[dict[str, Any]]:
+        """Shutdown-capable rules that cannot currently decide, with the reason.
+
+        Untrustworthy inputs never raise an alarm on their own, so this is the only
+        way a blind protection layer becomes visible.
+        """
+        now_monotonic = time.monotonic()
+        degraded: list[dict[str, Any]] = []
+        for rule in self._rule_engine.rules:
+            if not rule.can_shutdown():
+                continue
+            state = self._rule_engine.states.get(rule.rule_id)
+            if state is None or state.undecidable_since is None:
+                continue
+            blind_for = now_monotonic - state.undecidable_since
+            if blind_for < PROTECTION_DEGRADED_GRACE_SECONDS:
+                continue
+            degraded.append(
+                {
+                    "rule_id": rule.rule_id,
+                    "reason": rule.name,
+                    "required_sources": rule.level_min_sources(LEVEL_SHUTDOWN),
+                    ATTR_TRUSTED_SOURCES: state.trusted_sources,
+                    ATTR_UNTRUSTED_INPUTS: dict(state.untrusted_inputs),
+                    "blind_for_seconds": int(blind_for),
+                }
+            )
+        return degraded
+
+    @property
+    def protection_degraded(self) -> bool:
+        return bool(self.degraded_rules())
+
+    @property
+    def simulation_active(self) -> bool:
+        return self._simulation is not None
+
+    @property
+    def shutdown_active(self) -> bool:
+        """True only for a rule-derived shutdown level.
+
+        This is the single signal a physical stop may be wired to.
+        `stop_state.active` is True from `notify` upwards and is therefore
+        unsuitable for anything that switches load.
+        """
+        return self._real_stop_state.level == LEVEL_SHUTDOWN
 
     def _effective_email_level(self, level: str | None) -> str:
         if level in LEVEL_OPTIONS:
@@ -1002,9 +1488,7 @@ class EmergencyStopCoordinator(DataUpdateCoordinator[EmergencyStopState]):
         if level not in LEVEL_OPTIONS and level != LEVEL_NORMAL:
             _LOGGER.warning("Invalid simulation level: %s", level)
             return
-        if duration_seconds is not None and duration_seconds < 1:
-            _LOGGER.warning("Simulation duration must be >= 1 second.")
-            duration_seconds = None
+        duration_seconds = _coerce_simulation_duration(duration_seconds)
         prev_level = getattr(self, "_last_mobile_level", None) or LEVEL_NORMAL
         if level == LEVEL_NORMAL:
             await self._clear_simulation(send_notifications=send_notifications)
@@ -1664,70 +2148,178 @@ def _load_rules(config: dict[str, Any]) -> list[RuleConfig]:
     rules: list[RuleConfig] = []
     for raw in config.get(CONF_RULES, []) or []:
         try:
-            rule_id = str(raw.get(CONF_RULE_ID))
-            name = str(raw.get(CONF_RULE_NAME))
-        except (TypeError, ValueError):
-            _LOGGER.error("Invalid rule definition; missing id/name: %s", raw)
+            rule = _rule_from_raw(raw)
+        except Exception:
+            # One malformed rule must not take the whole safety layer down with it:
+            # an exception here used to propagate out of setup and leave every
+            # entity unavailable.
+            _LOGGER.exception("Skipping unloadable rule definition: %s", raw)
             continue
-        if not rule_id or not name:
-            _LOGGER.error("Invalid rule definition; missing id/name: %s", raw)
-            continue
-
-        thresholds = list(raw.get(CONF_RULE_THRESHOLDS, []))
-        severity_mode = raw.get(CONF_RULE_SEVERITY_MODE, SEVERITY_MODE_SIMPLE)
-        levels: dict[str, dict[str, Any]] = {}
-        raw_levels = raw.get(CONF_RULE_LEVELS, {}) or {}
-        if isinstance(raw_levels, dict):
-            for level in LEVEL_ORDER:
-                cfg = raw_levels.get(level)
-                if not isinstance(cfg, dict):
-                    continue
-                try:
-                    threshold = cfg.get("threshold")
-                    duration = cfg.get("duration_seconds")
-                    if threshold is None or duration is None:
-                        continue
-                    levels[level] = {
-                        "threshold": float(threshold),
-                        "duration_seconds": int(duration),
-                    }
-                except (TypeError, ValueError):
-                    continue
-        rule = RuleConfig(
-            rule_id=rule_id,
-            name=name,
-            data_type=raw.get(CONF_RULE_DATA_TYPE, DATA_TYPE_NUMERIC),
-            entities=list(raw.get(CONF_RULE_ENTITIES, [])),
-            aggregate=raw.get(CONF_RULE_AGGREGATE, ""),
-            condition=raw.get(CONF_RULE_CONDITION, ""),
-            thresholds=thresholds,
-            duration_seconds=max(
-                1, int(raw.get(CONF_RULE_DURATION, DEFAULT_RULE_DURATION))
-            ),
-            interval_seconds=max(
-                1, int(raw.get(CONF_RULE_INTERVAL, DEFAULT_RULE_INTERVAL))
-            ),
-            level=raw.get(CONF_RULE_LEVEL, DEFAULT_RULE_LEVEL),
-            latched=bool(raw.get(CONF_RULE_LATCHED, DEFAULT_RULE_LATCHED)),
-            unknown_handling=raw.get(
-                CONF_RULE_UNKNOWN_HANDLING, DEFAULT_RULE_UNKNOWN_HANDLING
-            ),
-            severity_mode=severity_mode,
-            direction=raw.get(CONF_RULE_DIRECTION),
-            levels=levels,
-            text_case_sensitive=bool(
-                raw.get(CONF_RULE_TEXT_CASE_SENSITIVE, DEFAULT_TEXT_CASE_SENSITIVE)
-            ),
-            text_trim=bool(raw.get(CONF_RULE_TEXT_TRIM, DEFAULT_TEXT_TRIM)),
-            notify_email=bool(
-                raw.get(CONF_RULE_NOTIFY_EMAIL, DEFAULT_RULE_NOTIFY_EMAIL)
-            ),
-            notify_mobile=bool(
-                raw.get(CONF_RULE_NOTIFY_MOBILE, DEFAULT_RULE_NOTIFY_MOBILE)
-            ),
-        )
-        rules.append(rule)
+        if rule is not None:
+            rules.append(rule)
     return rules
+
+
+def _rule_from_raw(raw: Any) -> RuleConfig | None:
+    if not isinstance(raw, dict):
+        _LOGGER.error("Invalid rule definition; not a mapping: %s", raw)
+        return None
+    rule_id = _normalize_optional_str(raw.get(CONF_RULE_ID))
+    name = _normalize_optional_str(raw.get(CONF_RULE_NAME))
+    if not rule_id or not name:
+        _LOGGER.error("Invalid rule definition; missing id/name: %s", raw)
+        return None
+
+    thresholds = list(raw.get(CONF_RULE_THRESHOLDS, []))
+    severity_mode = raw.get(CONF_RULE_SEVERITY_MODE, SEVERITY_MODE_SIMPLE)
+    if severity_mode not in SEVERITY_MODE_OPTIONS:
+        _LOGGER.error(
+            "Rule %s: unknown severity mode %s; skipping rule.",
+            rule_id,
+            severity_mode,
+        )
+        return None
+
+    levels: dict[str, dict[str, Any]] = {}
+    raw_levels = raw.get(CONF_RULE_LEVELS, {}) or {}
+    if isinstance(raw_levels, dict):
+        for level in LEVEL_ORDER:
+            cfg = raw_levels.get(level)
+            if not isinstance(cfg, dict):
+                continue
+            try:
+                threshold = cfg.get("threshold")
+                duration = cfg.get("duration_seconds")
+                if threshold is None or duration is None:
+                    continue
+                entry: dict[str, Any] = {
+                    "threshold": float(threshold),
+                    "duration_seconds": int(duration),
+                }
+                if cfg.get(CONF_RULE_MIN_SOURCES) is not None:
+                    entry[CONF_RULE_MIN_SOURCES] = max(
+                        1, int(cfg[CONF_RULE_MIN_SOURCES])
+                    )
+                levels[level] = entry
+            except (TypeError, ValueError):
+                continue
+
+    level = raw.get(CONF_RULE_LEVEL, DEFAULT_RULE_LEVEL)
+    if level not in LEVEL_OPTIONS:
+        # A typo here used to yield a level nothing matches on: the rule would look
+        # armed while no consumer could ever react to it.
+        _LOGGER.error(
+            "Rule %s: unknown level %s; falling back to %s.",
+            rule_id,
+            level,
+            DEFAULT_RULE_LEVEL,
+        )
+        level = DEFAULT_RULE_LEVEL
+
+    unknown_handling = raw.get(
+        CONF_RULE_UNKNOWN_HANDLING, DEFAULT_RULE_UNKNOWN_HANDLING
+    )
+    if unknown_handling not in UNKNOWN_HANDLING_OPTIONS:
+        _LOGGER.error(
+            "Rule %s: unknown unknown_handling %s; falling back to %s.",
+            rule_id,
+            unknown_handling,
+            DEFAULT_RULE_UNKNOWN_HANDLING,
+        )
+        unknown_handling = DEFAULT_RULE_UNKNOWN_HANDLING
+
+    reaches_shutdown = (
+        LEVEL_SHUTDOWN in levels
+        if severity_mode == SEVERITY_MODE_SEMAFOR
+        else level == LEVEL_SHUTDOWN
+    )
+    if reaches_shutdown and unknown_handling == UNKNOWN_TREAT_VIOLATION:
+        # treat_violation fires precisely when the inputs are gone, i.e. when the
+        # layer is degraded - never a reason to switch the house off.
+        _LOGGER.error(
+            "Rule %s: unknown_handling=%s is not allowed on a shutdown-capable "
+            "rule; using %s instead.",
+            rule_id,
+            UNKNOWN_TREAT_VIOLATION,
+            UNKNOWN_IGNORE,
+        )
+        unknown_handling = UNKNOWN_IGNORE
+
+    return RuleConfig(
+        rule_id=rule_id,
+        name=name,
+        data_type=raw.get(CONF_RULE_DATA_TYPE, DATA_TYPE_NUMERIC),
+        entities=list(raw.get(CONF_RULE_ENTITIES, [])),
+        aggregate=raw.get(CONF_RULE_AGGREGATE, ""),
+        condition=raw.get(CONF_RULE_CONDITION, ""),
+        thresholds=thresholds,
+        duration_seconds=max(
+            1, int(raw.get(CONF_RULE_DURATION, DEFAULT_RULE_DURATION))
+        ),
+        interval_seconds=max(
+            1, int(raw.get(CONF_RULE_INTERVAL, DEFAULT_RULE_INTERVAL))
+        ),
+        level=level,
+        latched=bool(raw.get(CONF_RULE_LATCHED, DEFAULT_RULE_LATCHED)),
+        unknown_handling=unknown_handling,
+        severity_mode=severity_mode,
+        direction=raw.get(CONF_RULE_DIRECTION),
+        levels=levels,
+        text_case_sensitive=bool(
+            raw.get(CONF_RULE_TEXT_CASE_SENSITIVE, DEFAULT_TEXT_CASE_SENSITIVE)
+        ),
+        text_trim=bool(raw.get(CONF_RULE_TEXT_TRIM, DEFAULT_TEXT_TRIM)),
+        notify_email=bool(raw.get(CONF_RULE_NOTIFY_EMAIL, DEFAULT_RULE_NOTIFY_EMAIL)),
+        notify_mobile=bool(
+            raw.get(CONF_RULE_NOTIFY_MOBILE, DEFAULT_RULE_NOTIFY_MOBILE)
+        ),
+        max_age_seconds=_coerce_non_negative_int(
+            raw.get(CONF_RULE_MAX_AGE, DEFAULT_RULE_MAX_AGE), DEFAULT_RULE_MAX_AGE
+        ),
+        value_min=_coerce_optional_float(raw.get(CONF_RULE_VALUE_MIN)),
+        value_max=_coerce_optional_float(raw.get(CONF_RULE_VALUE_MAX)),
+        max_step=_coerce_optional_float(raw.get(CONF_RULE_MAX_STEP)),
+        min_sources=max(
+            1,
+            _coerce_non_negative_int(
+                raw.get(CONF_RULE_MIN_SOURCES, DEFAULT_RULE_MIN_SOURCES),
+                DEFAULT_RULE_MIN_SOURCES,
+            ),
+        ),
+        recovery_seconds=_coerce_non_negative_int(
+            raw.get(CONF_RULE_RECOVERY, DEFAULT_RULE_RECOVERY),
+            DEFAULT_RULE_RECOVERY,
+        ),
+        flap_window_seconds=_coerce_non_negative_int(
+            raw.get(CONF_RULE_FLAP_WINDOW, DEFAULT_RULE_FLAP_WINDOW),
+            DEFAULT_RULE_FLAP_WINDOW,
+        ),
+        flap_budget_seconds=_coerce_non_negative_int(
+            raw.get(CONF_RULE_FLAP_BUDGET, DEFAULT_RULE_FLAP_BUDGET),
+            DEFAULT_RULE_FLAP_BUDGET,
+        ),
+    )
+
+
+def _coerce_simulation_duration(duration_seconds: int | None) -> int:
+    """Clamp a simulation to a bounded, always-expiring duration."""
+    try:
+        duration = int(duration_seconds) if duration_seconds is not None else 0
+    except (TypeError, ValueError):
+        duration = 0
+    if duration < 1:
+        if duration_seconds is not None:
+            _LOGGER.warning(
+                "Simulation duration must be >= 1 second; using %s s.",
+                DEFAULT_SIMULATION_DURATION_SECONDS,
+            )
+        return DEFAULT_SIMULATION_DURATION_SECONDS
+    if duration > MAX_SIMULATION_DURATION_SECONDS:
+        _LOGGER.warning(
+            "Simulation duration capped at %s s.", MAX_SIMULATION_DURATION_SECONDS
+        )
+        return MAX_SIMULATION_DURATION_SECONDS
+    return duration
 
 
 def _min_interval(rules: list[RuleConfig]) -> int:
@@ -1846,9 +2438,31 @@ def _parse_numeric_state(state: Any) -> tuple[float | None, str | None]:
     if state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
         return None, "unknown"
     try:
-        return float(state.state), None
+        value = float(state.state)
     except (TypeError, ValueError):
         return None, "invalid"
+    if not math.isfinite(value):
+        # float() happily parses "inf" and "nan"; inf would satisfy any
+        # higher-is-worse threshold instantly.
+        return None, "not_finite"
+    return value, None
+
+
+def _state_age_seconds(state: Any, now: Any) -> float | None:
+    """Seconds since the input last reported, or None if it cannot be told.
+
+    `last_reported` is preferred: a sensor repeating the same value is fresh, while
+    `last_updated` would only move when the value itself changes.
+    """
+    for attribute in ("last_reported", "last_updated", "last_changed"):
+        stamp = getattr(state, attribute, None)
+        if stamp is None:
+            continue
+        try:
+            return (now - stamp).total_seconds()
+        except TypeError:
+            continue
+    return None
 
 
 def _parse_binary_state(state: Any) -> tuple[str | None, str | None]:
@@ -1912,13 +2526,23 @@ def _highest_level(levels: list[str] | None) -> str | None:
     return max(levels, key=lambda level: _LEVEL_RANK.get(level, 0))
 
 
-def _handle_unknown(rule: RuleConfig, reason: str) -> RuleEvalResult:
+def _handle_unknown(
+    rule: RuleConfig,
+    reason: str,
+    trusted: int = 0,
+    untrusted: dict[str, str] | None = None,
+) -> RuleEvalResult:
     detail = f"{rule.name}: {reason}"
-    if rule.unknown_handling == UNKNOWN_TREAT_VIOLATION:
-        return RuleEvalResult(True, None, detail, None, reason)
+    inputs = dict(untrusted or {})
+    if rule.unknown_handling == UNKNOWN_TREAT_VIOLATION and not rule.can_shutdown():
+        # treat_violation is never allowed to reach shutdown: it fires exactly when
+        # the inputs are missing, i.e. when the layer is degraded rather than when
+        # the battery is in trouble. Such rules are rejected at load time; this is
+        # the belt-and-braces half of that guard.
+        return RuleEvalResult(True, None, detail, None, reason, trusted, inputs)
     if rule.unknown_handling == UNKNOWN_TREAT_OK:
-        return RuleEvalResult(False, None, detail, None, reason)
-    return RuleEvalResult(None, None, detail, None, reason)
+        return RuleEvalResult(False, None, detail, None, reason, trusted, inputs)
+    return RuleEvalResult(None, None, detail, None, reason, trusted, inputs)
 
 
 def _format_numeric_detail(rule: RuleConfig, value: float) -> str:
@@ -1947,6 +2571,49 @@ def _format_binary_count_detail(rule: RuleConfig, count_on: int) -> str:
 
 def _format_text_detail(rule: RuleConfig, match_value: str) -> str:
     return f"{rule.name}: {rule.condition} '{match_value}'"
+
+
+def _rule_fingerprint(rule: RuleConfig) -> str:
+    """Identity of everything that decides whether a rule fires.
+
+    Used to refuse restoring a latch onto a rule that has since been retuned.
+    """
+    payload = json.dumps(
+        [
+            rule.data_type,
+            sorted(rule.entities),
+            rule.aggregate,
+            rule.condition,
+            rule.thresholds,
+            rule.duration_seconds,
+            rule.level,
+            rule.severity_mode,
+            rule.direction,
+            {level: sorted(cfg.items()) for level, cfg in sorted(rule.levels.items())},
+            rule.min_sources,
+            rule.recovery_seconds,
+            rule.flap_window_seconds,
+            rule.flap_budget_seconds,
+        ],
+        sort_keys=True,
+        default=str,
+    )
+    return f"{zlib.crc32(payload.encode('utf-8')):08x}"
+
+
+def _crosses_threshold(
+    direction: str | None, value: float | int, threshold: float | int
+) -> bool:
+    if direction == DIRECTION_LOWER_IS_WORSE:
+        return value <= threshold
+    return value >= threshold
+
+
+def _format_semafor_ok_detail(rule: RuleConfig, value: float | int | None) -> str:
+    if value is None:
+        return f"{rule.name}: no level active"
+    side = "above" if rule.direction == DIRECTION_LOWER_IS_WORSE else "below"
+    return f"{rule.name}: {rule.aggregate}={value} {side} all thresholds"
 
 
 def _format_semafor_detail(
@@ -2016,3 +2683,14 @@ def _coerce_non_negative_int(value: Any, default: int) -> int:
     except (TypeError, ValueError):
         return default
     return max(0, numeric)
+
+
+def _coerce_optional_float(value: Any) -> float | None:
+    """Parse an optional bound; anything unusable disables the check."""
+    if value is None or value == "":
+        return None
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+    return numeric if math.isfinite(numeric) else None

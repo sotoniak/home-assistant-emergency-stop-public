@@ -72,7 +72,15 @@
           "latched": "Latched (requires reset)",
           "unknown_handling": "Unknown handling",
           "notify_email": "Email notifications (this rule)",
-          "notify_mobile": "Mobile notifications (this rule)"
+          "notify_mobile": "Mobile notifications (this rule)",
+          "max_age_seconds": "Max input age (s, 0 = no freshness check)",
+          "min_sources": "Minimum agreeing sources (quorum)",
+          "recovery_seconds": "Recovery hold (s, 0 = clear immediately)",
+          "flap_window_seconds": "Flap window (s, 0 = off)",
+          "flap_budget_seconds": "Flap budget inside the window (s)",
+          "value_min": "Plausible minimum (blank = no check)",
+          "value_max": "Plausible maximum (blank = no check)",
+          "max_step": "Max change per sample (blank = no check)"
         }
       },
       "rule_numeric_semafor": {
@@ -112,7 +120,12 @@
           "latched": "Latched (requires reset)",
           "unknown_handling": "Unknown handling",
           "notify_email": "Email notifications (this rule)",
-          "notify_mobile": "Mobile notifications (this rule)"
+          "notify_mobile": "Mobile notifications (this rule)",
+          "max_age_seconds": "Max input age (s, 0 = no freshness check)",
+          "min_sources": "Minimum agreeing sources (quorum)",
+          "recovery_seconds": "Recovery hold (s, 0 = clear immediately)",
+          "flap_window_seconds": "Flap window (s, 0 = off)",
+          "flap_budget_seconds": "Flap budget inside the window (s)"
         }
       },
       "rule_binary_count": {
@@ -136,7 +149,12 @@
           "latched": "Latched (requires reset)",
           "unknown_handling": "Unknown handling",
           "notify_email": "Email notifications (this rule)",
-          "notify_mobile": "Mobile notifications (this rule)"
+          "notify_mobile": "Mobile notifications (this rule)",
+          "max_age_seconds": "Max input age (s, 0 = no freshness check)",
+          "min_sources": "Minimum agreeing sources (quorum)",
+          "recovery_seconds": "Recovery hold (s, 0 = clear immediately)",
+          "flap_window_seconds": "Flap window (s, 0 = off)",
+          "flap_budget_seconds": "Flap budget inside the window (s)"
         }
       },
       "rule_binary_count_semafor": {
@@ -173,7 +191,12 @@
           "text_case_sensitive": "Case sensitive",
           "text_trim": "Trim whitespace",
           "notify_email": "Email notifications (this rule)",
-          "notify_mobile": "Mobile notifications (this rule)"
+          "notify_mobile": "Mobile notifications (this rule)",
+          "max_age_seconds": "Max input age (s, 0 = no freshness check)",
+          "min_sources": "Minimum agreeing sources (quorum)",
+          "recovery_seconds": "Recovery hold (s, 0 = clear immediately)",
+          "flap_window_seconds": "Flap window (s, 0 = off)",
+          "flap_budget_seconds": "Flap budget inside the window (s)"
         }
       },
       "add_rule": {
@@ -214,10 +237,14 @@
       "import_rules_required": "At least one rule is required in the import",
       "import_duplicate_rule_id": "Import contains duplicate rule IDs",
       "import_conflict": "Import conflicts with existing rule IDs",
+      "import_shutdown_treat_violation": "Shutdown-capable rules cannot use unknown_handling=treat_violation",
       "export_failed": "Export failed",
       "semafor_levels_required": "At least one semafor level is required",
       "semafor_order": "Semafor thresholds are in wrong order",
-      "duration_required": "Duration is required"
+      "duration_required": "Duration is required",
+      "shutdown_treat_violation": "A shutdown-level rule cannot treat unknown inputs as a violation",
+      "flap_pair_required": "Flap window and flap budget must be set together",
+      "flap_budget_too_large": "Flap budget cannot exceed the flap window"
     }
   },
   "options": {
@@ -331,7 +358,15 @@
           "latched": "Latched (requires reset)",
           "unknown_handling": "Unknown handling",
           "notify_email": "Email notifications (this rule)",
-          "notify_mobile": "Mobile notifications (this rule)"
+          "notify_mobile": "Mobile notifications (this rule)",
+          "max_age_seconds": "Max input age (s, 0 = no freshness check)",
+          "min_sources": "Minimum agreeing sources (quorum)",
+          "recovery_seconds": "Recovery hold (s, 0 = clear immediately)",
+          "flap_window_seconds": "Flap window (s, 0 = off)",
+          "flap_budget_seconds": "Flap budget inside the window (s)",
+          "value_min": "Plausible minimum (blank = no check)",
+          "value_max": "Plausible maximum (blank = no check)",
+          "max_step": "Max change per sample (blank = no check)"
         }
       },
       "rule_numeric_semafor": {
@@ -371,7 +406,12 @@
           "latched": "Latched (requires reset)",
           "unknown_handling": "Unknown handling",
           "notify_email": "Email notifications (this rule)",
-          "notify_mobile": "Mobile notifications (this rule)"
+          "notify_mobile": "Mobile notifications (this rule)",
+          "max_age_seconds": "Max input age (s, 0 = no freshness check)",
+          "min_sources": "Minimum agreeing sources (quorum)",
+          "recovery_seconds": "Recovery hold (s, 0 = clear immediately)",
+          "flap_window_seconds": "Flap window (s, 0 = off)",
+          "flap_budget_seconds": "Flap budget inside the window (s)"
         }
       },
       "rule_binary_count": {
@@ -395,7 +435,12 @@
           "latched": "Latched (requires reset)",
           "unknown_handling": "Unknown handling",
           "notify_email": "Email notifications (this rule)",
-          "notify_mobile": "Mobile notifications (this rule)"
+          "notify_mobile": "Mobile notifications (this rule)",
+          "max_age_seconds": "Max input age (s, 0 = no freshness check)",
+          "min_sources": "Minimum agreeing sources (quorum)",
+          "recovery_seconds": "Recovery hold (s, 0 = clear immediately)",
+          "flap_window_seconds": "Flap window (s, 0 = off)",
+          "flap_budget_seconds": "Flap budget inside the window (s)"
         }
       },
       "rule_binary_count_semafor": {
@@ -432,7 +477,12 @@
           "text_case_sensitive": "Case sensitive",
           "text_trim": "Trim whitespace",
           "notify_email": "Email notifications (this rule)",
-          "notify_mobile": "Mobile notifications (this rule)"
+          "notify_mobile": "Mobile notifications (this rule)",
+          "max_age_seconds": "Max input age (s, 0 = no freshness check)",
+          "min_sources": "Minimum agreeing sources (quorum)",
+          "recovery_seconds": "Recovery hold (s, 0 = clear immediately)",
+          "flap_window_seconds": "Flap window (s, 0 = off)",
+          "flap_budget_seconds": "Flap budget inside the window (s)"
         }
       },
       "add_rule": {
@@ -472,10 +522,14 @@
       "import_rules_required": "At least one rule is required in the import",
       "import_duplicate_rule_id": "Import contains duplicate rule IDs",
       "import_conflict": "Import conflicts with existing rule IDs",
+      "import_shutdown_treat_violation": "Shutdown-capable rules cannot use unknown_handling=treat_violation",
       "export_failed": "Export failed",
       "semafor_levels_required": "At least one semafor level is required",
       "semafor_order": "Semafor thresholds are in wrong order",
-      "duration_required": "Duration is required"
+      "duration_required": "Duration is required",
+      "shutdown_treat_violation": "A shutdown-level rule cannot treat unknown inputs as a violation",
+      "flap_pair_required": "Flap window and flap budget must be set together",
+      "flap_budget_too_large": "Flap budget cannot exceed the flap window"
     }
   }
 }

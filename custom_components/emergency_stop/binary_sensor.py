@@ -3,13 +3,31 @@ from __future__ import annotations
 
 from typing import Any
 
-from homeassistant.components.binary_sensor import BinarySensorEntity
+from homeassistant.components.binary_sensor import (
+    BinarySensorDeviceClass,
+    BinarySensorEntity,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, NAME
+from .const import (
+    ATTR_ACKNOWLEDGED,
+    ATTR_ACTIVE_EVENTS,
+    ATTR_DEGRADED_RULES,
+    ATTR_ERROR_LEVEL,
+    ATTR_LATCHED_SINCE,
+    ATTR_PRIMARY_DETAIL,
+    ATTR_PRIMARY_REASON,
+    ATTR_PRIMARY_SENSOR,
+    ATTR_PRIMARY_VALUE,
+    ATTR_SIMULATION_ACTIVE,
+    DOMAIN,
+    LEVEL_SHUTDOWN,
+    NAME,
+)
 from .coordinator import EmergencyStopCoordinator, RuleConfig
 
 
@@ -19,6 +37,8 @@ async def async_setup_entry(
     coordinator: EmergencyStopCoordinator = hass.data[DOMAIN][entry.entry_id]
     entities: list[BinarySensorEntity] = [
         EmergencyStopActiveBinarySensor(coordinator),
+        EmergencyStopShutdownBinarySensor(coordinator),
+        EmergencyStopProtectionDegradedBinarySensor(coordinator),
     ]
     entities.extend(
         EmergencyStopRuleBinarySensor(coordinator, rule)
@@ -50,6 +70,82 @@ class EmergencyStopActiveBinarySensor(
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         return self.coordinator.stop_state.to_attributes()
+
+
+class EmergencyStopShutdownBinarySensor(
+    CoordinatorEntity[EmergencyStopCoordinator], BinarySensorEntity
+):
+    """Shutdown-level signal, the only one safe to switch load from.
+
+    Unlike `Emergency Stop Active` (on from `notify` upwards) this is on solely
+    for a rule-derived `shutdown` level, and a simulation cannot raise it.
+    """
+
+    _attr_has_entity_name = True
+    _attr_device_class = BinarySensorDeviceClass.PROBLEM
+
+    def __init__(self, coordinator: EmergencyStopCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{DOMAIN}_shutdown"
+        self._attr_name = "Emergency Stop Shutdown"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, "emergency_stop")},
+            name=NAME,
+        )
+
+    @property
+    def is_on(self) -> bool:
+        return self.coordinator.shutdown_active
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        state = self.coordinator.real_stop_state
+        return {
+            ATTR_ERROR_LEVEL: state.level,
+            ATTR_PRIMARY_REASON: state.primary_reason,
+            ATTR_PRIMARY_DETAIL: state.primary_detail,
+            ATTR_PRIMARY_SENSOR: state.primary_sensor_entity,
+            ATTR_PRIMARY_VALUE: state.primary_value,
+            ATTR_LATCHED_SINCE: state.latched_since,
+            ATTR_ACKNOWLEDGED: state.acknowledged,
+            ATTR_SIMULATION_ACTIVE: self.coordinator.simulation_active,
+            ATTR_ACTIVE_EVENTS: [
+                event
+                for event in state.active_events
+                if event.get("level") == LEVEL_SHUTDOWN
+            ],
+        }
+
+
+class EmergencyStopProtectionDegradedBinarySensor(
+    CoordinatorEntity[EmergencyStopCoordinator], BinarySensorEntity
+):
+    """On when a shutdown-capable rule cannot decide on its inputs.
+
+    An untrustworthy input is deliberately never treated as a violation, which
+    would otherwise let the protection go blind without anyone noticing.
+    """
+
+    _attr_has_entity_name = True
+    _attr_device_class = BinarySensorDeviceClass.PROBLEM
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator: EmergencyStopCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{DOMAIN}_protection_degraded"
+        self._attr_name = "Emergency Stop Protection Degraded"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, "emergency_stop")},
+            name=NAME,
+        )
+
+    @property
+    def is_on(self) -> bool:
+        return self.coordinator.protection_degraded
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return {ATTR_DEGRADED_RULES: self.coordinator.degraded_rules()}
 
 
 class EmergencyStopRuleBinarySensor(

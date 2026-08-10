@@ -84,6 +84,9 @@ class FakeCoordinator:
         self.stop_state = {"state": "ok"}
         self.calls: list[tuple[str, tuple, dict]] = []
 
+    async def async_restore_latches(self):
+        self.calls.append(("restore_latches", (), {}))
+
     async def async_config_entry_first_refresh(self):
         self.calls.append(("first_refresh", (), {}))
 

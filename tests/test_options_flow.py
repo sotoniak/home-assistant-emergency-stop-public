@@ -257,3 +257,68 @@ def test_options_flow_import_rule_saves_immediately(tmp_path, monkeypatch):
     assert result["step_id"] == "rules_action"
     saved = flow.hass.config_entries.update_calls[-1]
     assert [rule["rule_id"] for rule in saved[CONF_RULES]] == ["imported_rule"]
+
+
+def test_trust_fields_round_trip_through_the_rule_form():
+    """Editing a rule must preserve its trust settings, not silently reset them."""
+    from custom_components.emergency_stop.config_flow import (
+        _build_rule_config,
+        _seed_rule_context,
+        _validate_trust_fields,
+    )
+
+    stored = {
+        "rule_id": "ov",
+        "rule_name": "OV",
+        "data_type": "numeric",
+        "entities": ["sensor.a", "sensor.b"],
+        "aggregate": "max",
+        "condition": "gte",
+        "thresholds": [3.6],
+        "duration_seconds": 5,
+        "interval_seconds": 1,
+        "level": "shutdown",
+        "max_age_seconds": 120,
+        "min_sources": 2,
+        "recovery_seconds": 30,
+        "flap_window_seconds": 3600,
+        "flap_budget_seconds": 600,
+        "value_min": 2.0,
+        "value_max": 4.2,
+        "max_step": 0.15,
+    }
+
+    context = _seed_rule_context(stored)
+    rebuilt = _build_rule_config(context, {}, [])
+
+    for field in (
+        "max_age_seconds",
+        "min_sources",
+        "recovery_seconds",
+        "flap_window_seconds",
+        "flap_budget_seconds",
+        "value_min",
+        "value_max",
+        "max_step",
+    ):
+        assert rebuilt[field] == stored[field], field
+
+
+def test_trust_field_validation_rejects_nonsense():
+    from custom_components.emergency_stop.config_flow import _validate_trust_fields
+
+    assert _validate_trust_fields({"min_sources": 0}) == {"min_sources": "min_1"}
+    assert _validate_trust_fields({"max_age_seconds": -1}) == {
+        "max_age_seconds": "min_0"
+    }
+    assert _validate_trust_fields({"value_min": 4, "value_max": 2}) == {
+        "value_min": "thresholds_order"
+    }
+    assert _validate_trust_fields({"max_step": 0}) == {"max_step": "min_1"}
+    assert _validate_trust_fields({"flap_window_seconds": 600}) == {
+        "flap_budget_seconds": "flap_pair_required"
+    }
+    assert _validate_trust_fields(
+        {"flap_window_seconds": 60, "flap_budget_seconds": 600}
+    ) == {"flap_budget_seconds": "flap_budget_too_large"}
+    assert _validate_trust_fields({}) == {}

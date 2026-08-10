@@ -226,7 +226,14 @@ def test_run_side_effects_exception_is_caught():
     asyncio.run(run())
 
 
-def test_simulate_level_no_notifications():
+def test_simulate_level_no_notifications(monkeypatch):
+    # A simulation now always schedules its own expiry, so the timer helper has to
+    # be stubbed out for the loop-less FakeHass used here.
+    monkeypatch.setattr(
+        "custom_components.emergency_stop.coordinator.async_call_later",
+        lambda *args, **kwargs: (lambda: None),
+    )
+
     async def run():
         coordinator = EmergencyStopCoordinator.__new__(EmergencyStopCoordinator)
         coordinator.hass = FakeHass()

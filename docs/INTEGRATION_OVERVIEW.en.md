@@ -29,7 +29,26 @@ If multiple rules are active, the highest level wins (`shutdown` > `limit` > `no
 - Key attributes: `error_level`, `primary_*` details, `active_events`, `active_reasons`,
   `active_levels`, `events_by_reason`, `acknowledged`, `last_update`, `latched_since`.
 
-2. `binary_sensor.emergency_stop_<rule_id>`
+2. `binary_sensor.emergency_stop_shutdown`
+- Purpose: the only signal safe to switch real load from.
+- On when: the rules put the level at `shutdown`. A simulation never raises it, and no
+  lower level does either — unlike `emergency_stop_active`, which is on from `notify` up.
+- Key attributes: `error_level`, `primary_*`, `latched_since`, `simulation_active`, and
+  `active_events` filtered to shutdown events.
+- Wiring rule: trigger on an explicit `on`. The entity goes `unavailable` whenever the
+  coordinator cannot update, so a "not off" condition would read that as an alarm.
+
+3. `binary_sensor.emergency_stop_protection_degraded`
+- Purpose: makes a blind protection layer visible.
+- On when: a shutdown-capable rule has had fewer trusted inputs than its quorum needs for
+  longer than the grace period (stale, out-of-range, non-finite or missing inputs).
+- Key attributes: `degraded_rules`, with per-rule `trusted_sources`, `untrusted_inputs`,
+  `required_sources` and `blind_for_seconds`.
+- Rationale: an untrustworthy input is never treated as a violation — that would shut the
+  house down every time an integration drops out — so without this signal the protection
+  could stop working silently.
+
+4. `binary_sensor.emergency_stop_<rule_id>`
 - Purpose: a direct trigger for a specific rule.
 - On when: that rule is active.
 - Attributes include the rule config and runtime state (last match/aggregate, timestamps).
@@ -132,7 +151,9 @@ Behavior:
 - Downgrade sends to **new level** targets and **previous level** targets.
 - Return to `normal` sends to **notify** targets.
 - Report button sends a **TEST** notification to all configured targets.
-- Notification/email sending is bounded by a 3-second timeout to avoid blocking state updates.
+- Notifications and email run detached from the evaluation cycle (bounded by a 3-second
+  timeout), so a slow notify service delays neither the next evaluation nor the state
+  a physical stop reacts to.
 
 Urgent payload:
 - iOS: `push.interruption-level: critical`
@@ -264,3 +285,28 @@ For `unknown`, `unavailable`, missing, or invalid values, each rule applies `unk
 
 If `latched=true`, the rule remains active until reset, even if the condition clears.
 In Semafor mode, the highest reached level stays latched until reset.
+
+Latches are persisted across restarts, so the reload that every options save triggers
+no longer clears an active alarm. A stored latch is discarded only when the rule's
+decisive configuration changed since it was raised (entities, thresholds, duration,
+level, quorum, flap settings) - an alarm raised against different thresholds says
+nothing about the new ones.
+
+### Input Trust
+
+Per-rule guards, all off by default. A rule that can reach `shutdown` should set them,
+because without them it decides on a single unvalidated sensor reading.
+
+| Field | Meaning |
+|---|---|
+| `max_age_seconds` | Older input counts as `stale` and is dropped. Age comes from `last_reported`, then `last_updated`/`last_changed`; an undeterminable age is treated as stale. |
+| `value_min` / `value_max` | Plausible range; outside it the input is `out_of_range`. `nan`/`inf` are always `not_finite`. |
+| `max_step` | Largest accepted change between samples; a bigger one is `jump`, but only a few times in a row so a genuinely fast rise is not hidden forever. |
+| `min_sources` | Quorum: the condition must hold for that many inputs independently (`max`/`min` aggregates). Fewer trusted inputs than the quorum yields `quorum_not_met` instead of a decision. Per-level override: `levels.<level>.min_sources`. |
+| `recovery_seconds` | How long the input must be healthy before elapsed violation time is discarded; otherwise every brief recovery restarts the duration. |
+| `flap_window_seconds` + `flap_budget_seconds` | Cumulative failure budget in a trailing window, for inputs that never fail long enough in one go but are unusable overall. Both required together. |
+
+`unknown_handling: treat_violation` is refused on a shutdown-capable rule (options flow,
+import and load time): it fires exactly when inputs are missing, which means the layer
+is degraded, not that the battery is in trouble. Such situations raise
+`binary_sensor.emergency_stop_protection_degraded` instead.
